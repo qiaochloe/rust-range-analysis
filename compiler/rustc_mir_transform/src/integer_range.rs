@@ -46,28 +46,58 @@ use crate::patch::MirPatch;
 pub struct Range {
     pub lo: ScalarInt,
     pub hi: ScalarInt,
+    /// Whether the value is of a signed integer type.
+    pub signed: bool,
 }
 
 impl Range {
-    pub fn new(lo: ScalarInt, hi: ScalarInt) -> Self {
-        Self { lo, hi }
+    pub fn new(lo: ScalarInt, hi: ScalarInt, signed: bool) -> Self {
+        Self { lo, hi, signed }
     }
 
-    pub fn singleton(v: ScalarInt) -> Self {
-        Range { lo: v, hi: v }
+    pub fn singleton(v: ScalarInt, signed: bool) -> Self {
+        Range { lo: v, hi: v, signed }
     }
 
-    // TODO: check how to do ordering in join and intersect
+    fn compare(&self, a: ScalarInt, b: ScalarInt) -> std::cmp::Ordering {
+        let size = a.size();
+        if self.signed {
+            a.to_int(size).cmp(&b.to_int(size))
+        } else {
+            a.to_uint(size).cmp(&b.to_uint(size))
+        }
+    }
+
     pub fn join(&self, other: &Self) -> Self {
-        let lo = if self.lo.to_u8() <= other.lo.to_u8() { self.lo } else { other.lo };
-        let hi = if self.hi.to_u8() >= other.hi.to_u8() { self.hi } else { other.hi };
-        Range { lo, hi }
+        if self.signed != other.signed {
+            bug!(
+                "Cannot join ranges with different signedness: self.signed={}, other.signed={}",
+                self.signed,
+                other.signed
+            );
+        }
+
+        let lo = if self.compare(self.lo, other.lo).is_le() { self.lo } else { other.lo };
+        let hi = if self.compare(self.hi, other.hi).is_ge() { self.hi } else { other.hi };
+        Range { lo, hi, signed: self.signed }
     }
 
     pub fn intersect(self, other: Self) -> Option<Self> {
-        let lo = if self.lo.to_u8() >= other.lo.to_u8() { self.lo } else { other.lo };
-        let hi = if self.hi.to_u8() <= other.hi.to_u8() { self.hi } else { other.hi };
-        if lo.to_u8() <= hi.to_u8() { Some(Range { lo, hi }) } else { None }
+        if self.signed != other.signed {
+            bug!(
+                "Cannot intersect ranges with different signedness: self.signed={}, other.signed={}",
+                self.signed,
+                other.signed
+            );
+        }
+
+        let lo = if self.compare(self.lo, other.lo).is_ge() { self.lo } else { other.lo };
+        let hi = if self.compare(self.hi, other.hi).is_le() { self.hi } else { other.hi };
+        if self.compare(lo, hi).is_le() {
+            Some(Range { lo, hi, signed: self.signed })
+        } else {
+            None
+        }
     }
 }
 
@@ -462,8 +492,9 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         if !ty.is_integral() {
             return RangeLattice::Top;
         }
+        let signed = ty.is_signed();
         match constant.const_.try_eval_scalar_int(self.tcx, self.typing_env) {
-            Some(scalar_int) => RangeLattice::Range(Range::singleton(scalar_int)),
+            Some(scalar_int) => RangeLattice::Range(Range::singleton(scalar_int, signed)),
             None => RangeLattice::Top,
         }
     }
@@ -493,15 +524,15 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                     return (RangeLattice::Top, RangeLattice::Top);
                 };
                 let size = layout.size;
-                let is_signed = ty.is_signed();
+                let signed = ty.is_signed();
 
                 use BinOp::*;
                 let res = match op {
-                    Add | Sub | Mul => self.arith_interval(op, l, r, size, is_signed),
+                    Add | Sub | Mul => self.arith_interval(op, l, r, size, signed),
                     BitAnd | BitOr | BitXor => self.bitwise_interval(op, l, r, size),
-                    Shl | Shr => self.shift_interval(op, l, r, size, is_signed),
+                    Shl | Shr => self.shift_interval(op, l, r, size, signed),
                     Eq | Ne | Lt | Le | Gt | Ge => {
-                        self.bool_interval_from_compare(op, l, r, size, is_signed)
+                        self.bool_interval_from_compare(op, l, r, size, signed)
                     }
                     _ => return (RangeLattice::Top, RangeLattice::Top),
                 };
@@ -547,7 +578,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         l: Range,
         r: Range,
         size: Size,
-        is_signed: bool,
+        signed: bool,
     ) -> RangeLattice {
         // TODO: should we use std in the compiler?
         use std::cmp::{max, min};
@@ -556,11 +587,11 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
         // TODO: is this conversion from u128 to i128 safe? What if there is overflow
         let to_i = |s: ScalarInt| -> i128 {
-            if is_signed { s.to_int(size) } else { s.to_uint(size) as i128 }
+            if signed { s.to_int(size) } else { s.to_uint(size) as i128 }
         };
 
         let from_i = |v: i128| -> ScalarInt {
-            if is_signed { ScalarInt::from(v) } else { ScalarInt::from(v as u128) }
+            if signed { ScalarInt::from(v) } else { ScalarInt::from(v as u128) }
         };
 
         let ll = to_i(l.lo);
@@ -582,7 +613,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
         let res_lo = from_i(min_v);
         let res_hi = from_i(max_v);
-        RangeLattice::Range(Range::new(res_lo, res_hi))
+        RangeLattice::Range(Range::new(res_lo, res_hi, signed))
     }
 
     fn bitwise_interval(&self, op: BinOp, l: Range, r: Range, size: Size) -> RangeLattice {
@@ -591,6 +622,8 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         use BinOp::*;
 
         // TODO: only implemented for unsigned ints
+        // Bitwise operations are typically unsigned, but we preserve the signedness from input ranges
+        let signed = l.signed; // Both ranges should have same signedness
 
         let to_u = |s: ScalarInt| -> u128 { s.to_uint(size) };
 
@@ -603,7 +636,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
             BitAnd => {
                 if l.lo == l.hi && r.lo == r.hi {
                     let res = from_u(to_u(l.lo) & to_u(r.lo));
-                    return RangeLattice::Range(Range::singleton(res));
+                    return RangeLattice::Range(Range::singleton(res, signed));
                 }
 
                 // 0 <= (a & b) <= min(a, b)
@@ -612,13 +645,13 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                 let hi = from_u(l_hi.min(r_hi));
                 let lo = from_u(0);
 
-                RangeLattice::Range(Range::new(lo, hi))
+                RangeLattice::Range(Range::new(lo, hi, signed))
             }
 
             BitOr => {
                 if l.lo == l.hi && r.lo == r.hi {
                     let res = from_u(to_u(l.lo) | to_u(r.lo));
-                    return RangeLattice::Range(Range::singleton(res));
+                    return RangeLattice::Range(Range::singleton(res, signed));
                 }
 
                 // min >= max(lo_l, lo_r)
@@ -631,19 +664,19 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                 let lo = from_u(l_lo.max(r_lo));
                 let hi = from_u(l_hi | r_hi);
 
-                RangeLattice::Range(Range::new(lo, hi))
+                RangeLattice::Range(Range::new(lo, hi, signed))
             }
 
             BitXor => {
                 if l.lo == l.hi && r.lo == r.hi {
                     let res = from_u(to_u(l.lo) ^ to_u(r.lo));
-                    return RangeLattice::Range(Range::singleton(res));
+                    return RangeLattice::Range(Range::singleton(res, signed));
                 }
 
                 let mask = size.truncate(u128::MAX);
                 let lo = from_u(0);
                 let hi = from_u(mask);
-                RangeLattice::Range(Range::new(lo, hi))
+                RangeLattice::Range(Range::new(lo, hi, signed))
             }
             _ => unreachable!(),
         }
@@ -655,7 +688,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         _l: Range,
         _r: Range,
         _size: Size,
-        _is_signed: bool,
+        _signed: bool,
     ) -> RangeLattice {
         todo!();
     }
@@ -666,12 +699,12 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         l: Range,
         r: Range,
         size: Size,
-        is_signed: bool,
+        signed: bool,
     ) -> RangeLattice {
         use BinOp::*;
 
         let to_i = |s: ScalarInt| -> i128 {
-            if is_signed { s.to_int(size) } else { s.to_uint(size) as i128 }
+            if signed { s.to_int(size) } else { s.to_uint(size) as i128 }
         };
 
         let ll = to_i(l.lo);
@@ -695,13 +728,14 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
             let zero = mk_scalar(0);
             let one = mk_scalar(1);
+            let signed = false;
 
             if always_true && !always_false {
-                RangeLattice::Range(Range::singleton(one))
+                RangeLattice::Range(Range::singleton(one, signed))
             } else if always_false && !always_true {
-                RangeLattice::Range(Range::singleton(zero))
+                RangeLattice::Range(Range::singleton(zero, signed))
             } else {
-                RangeLattice::Range(Range::new(zero, one))
+                RangeLattice::Range(Range::new(zero, one, signed))
             }
         };
 
@@ -763,7 +797,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
             RangeLattice::Bottom => TerminatorEdges::None,
             RangeLattice::Top => TerminatorEdges::SwitchInt { discr, targets },
 
-            RangeLattice::Range(Range { lo, hi }) => {
+            RangeLattice::Range(Range { lo, hi, .. }) => {
                 // TODO: filter out more
 
                 // If the range is a singleton && it matches exactly one target,
@@ -838,7 +872,12 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
     fn wrap_immediate(&self, imm: Immediate) -> RangeLattice {
         match imm {
-            Immediate::Scalar(Scalar::Int(v)) => RangeLattice::Range(Range::singleton(v)),
+            Immediate::Scalar(Scalar::Int(v)) => {
+                // FIXME:
+                // Default to unsigned if we don't have type information
+                // This is used in contexts where type info might not be available
+                RangeLattice::Range(Range::singleton(v, false))
+            }
             Immediate::Uninit => RangeLattice::Bottom,
             _ => RangeLattice::Top,
         }
@@ -877,11 +916,7 @@ impl<'tcx> DebugWithContext<IntegerRangeAnalysis<'_, 'tcx>> for State<RangeLatti
 impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
     /// Evaluates a boolean operand.
     /// Returns Some(true) if always true, Some(false) if always false, None if unknown.
-    fn eval_bool(
-        &self,
-        operand: &Operand<'tcx>,
-        state: &State<RangeLattice>,
-    ) -> Option<bool> {
+    fn eval_bool(&self, operand: &Operand<'tcx>, state: &State<RangeLattice>) -> Option<bool> {
         if !state.is_reachable() {
             return None;
         }
@@ -896,7 +931,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         match value {
             RangeLattice::Bottom => None,
             RangeLattice::Top => None,
-            RangeLattice::Range(Range { lo, hi }) => {
+            RangeLattice::Range(Range { lo, hi, .. }) => {
                 let lo_bits = lo.to_bits_unchecked();
                 let hi_bits = hi.to_bits_unchecked();
                 assert!(lo_bits == 0 || lo_bits == 1);
@@ -932,9 +967,7 @@ impl<'a, 'tcx> Collector<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> ResultsVisitor<'tcx, IntegerRangeAnalysis<'a, 'tcx>>
-    for Collector<'a, 'tcx>
-{
+impl<'a, 'tcx> ResultsVisitor<'tcx, IntegerRangeAnalysis<'a, 'tcx>> for Collector<'a, 'tcx> {
     fn visit_after_primary_terminator_effect(
         &mut self,
         _analysis: &IntegerRangeAnalysis<'a, 'tcx>,
@@ -966,12 +999,13 @@ impl<'a, 'tcx> ResultsVisitor<'tcx, IntegerRangeAnalysis<'a, 'tcx>>
                 let mut state_mut = state.clone();
                 let value = self.analysis.eval_operand(discr, &mut state_mut);
 
-                if let RangeLattice::Range(Range { lo, hi }) = value {
+                if let RangeLattice::Range(Range { lo, hi, .. }) = value {
                     // Handle singleton range
                     if lo == hi {
                         let bits = lo.to_bits_unchecked();
                         let target = targets.target_for_value(bits);
-                        self.patch.patch_terminator(location.block, TerminatorKind::Goto { target });
+                        self.patch
+                            .patch_terminator(location.block, TerminatorKind::Goto { target });
                         return;
                     }
 
