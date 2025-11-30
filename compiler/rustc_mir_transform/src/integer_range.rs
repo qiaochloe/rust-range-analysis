@@ -164,8 +164,8 @@ impl<'tcx> crate::MirPass<'tcx> for IntegerRange {
             IntegerRangeAnalysis::new(tcx, body, map).iterate_to_fixpoint(tcx, body, None)
         });
 
-        //dbg!(&results.analysis.map);
-        //dbg!(&results.entry_states);
+        dbg!(&results.analysis.map);
+        dbg!(&results.entry_states);
 
         // Perform dead code elimination based on range analysis
         let patch = {
@@ -204,11 +204,21 @@ impl<'tcx> Analysis<'tcx> for IntegerRangeAnalysis<'_, 'tcx> {
     }
 
     fn initialize_start_block(&self, body: &Body<'tcx>, state: &mut Self::Domain) {
-        // The initial state maps all tracked places of argument projections to ⊤ and the rest to ⊥.
         assert_matches!(state, State::Unreachable);
         *state = State::new_reachable();
         for arg in body.args_iter() {
-            state.flood(PlaceRef { local: arg, projection: &[] }, &self.map);
+            let arg_ty = self.local_decls[arg].ty;
+            let place_ref = PlaceRef { local: arg, projection: &[] };
+            let type_range = self.get_type_range(arg_ty);
+            if let Some(type_range) = type_range {
+                state.assign(
+                    place_ref,
+                    ValueOrPlace::Value(RangeLattice::Range(type_range)),
+                    &self.map,
+                );
+            } else {
+                state.flood_with(place_ref, &self.map, RangeLattice::Top);
+            }
         }
     }
 
@@ -252,6 +262,38 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
     fn new(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, map: Map<'tcx>) -> Self {
         let typing_env = body.typing_env(tcx);
         Self { map, tcx, local_decls: &body.local_decls, typing_env }
+    }
+
+    /// Get the valid range for a type.
+    /// Returns None if the type is not integral or bool.
+    fn get_type_range(&self, ty: Ty<'tcx>) -> Option<Range> {
+        if ty.is_bool() {
+            Some(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, false))
+        } else if ty.is_integral() {
+            let signed = ty.is_signed();
+
+            let Ok(layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty)) else {
+                return None;
+            };
+            let size = layout.size;
+
+            let (type_min, type_max) = if signed {
+                let signed_min = size.signed_int_min();
+                let signed_max = size.signed_int_max();
+                (
+                    ScalarInt::try_from_int(signed_min, size).unwrap(),
+                    ScalarInt::try_from_int(signed_max, size).unwrap(),
+                )
+            } else {
+                let zero = ScalarInt::try_from_uint(0u128, size).unwrap();
+                let unsigned_max = size.unsigned_int_max();
+                let max = ScalarInt::try_from_uint(unsigned_max, size).unwrap();
+                (zero, max)
+            };
+            Some(Range::new(type_min, type_max, signed))
+        } else {
+            None
+        }
     }
 
     fn handle_statement(&self, statement: &Statement<'tcx>, state: &mut State<RangeLattice>) {
@@ -525,13 +567,28 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         _state: &mut State<RangeLattice>,
     ) -> RangeLattice {
         let ty = constant.const_.ty();
-        if !ty.is_integral() {
-            return RangeLattice::Top;
-        }
-        let signed = ty.is_signed();
-        match constant.const_.try_eval_scalar_int(self.tcx, self.typing_env) {
-            Some(scalar_int) => RangeLattice::Range(Range::singleton(scalar_int, signed)),
-            None => RangeLattice::Top,
+
+        if ty.is_bool() {
+            match constant.const_.try_eval_bool(self.tcx, self.typing_env) {
+                Some(true) => RangeLattice::Range(Range::singleton(ScalarInt::TRUE, false)),
+                Some(false) => RangeLattice::Range(Range::singleton(ScalarInt::FALSE, false)),
+                None => RangeLattice::Range(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, false)),
+            }
+        } else if ty.is_integral() {
+            match constant.const_.try_eval_scalar_int(self.tcx, self.typing_env) {
+                Some(scalar_int) => {
+                    RangeLattice::Range(Range::singleton(scalar_int, ty.is_signed()))
+                }
+                None => {
+                    if let Some(type_range) = self.get_type_range(ty) {
+                        RangeLattice::Range(type_range)
+                    } else {
+                        RangeLattice::Top
+                    }
+                }
+            }
+        } else {
+            RangeLattice::Top
         }
     }
 
@@ -560,8 +617,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
                 use BinOp::*;
                 let res = match op {
-                    // FIXME: handle division
-                    Add | Sub | Mul => self.arith_interval(op, l, r, size, signed),
+                    Add | Sub | Mul | Div => self.arith_interval(op, l, r, size, signed),
                     BitAnd | BitOr | BitXor => self.bitwise_interval(op, l, r, size),
                     // FIXME: handle ShrUnchecked, ShlUnchecked
                     Shl | Shr => self.shift_interval(op, l, r, size, signed),
@@ -609,10 +665,24 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                     let &mx = candidates.iter().max().unwrap();
                     (mn, mx)
                 }
+                Div => {
+                    // Division by zero is UB
+                    if rl <= 0 && rh >= 0 {
+                        return RangeLattice::Top;
+                    }
+                    let candidates = [ll / rl, ll / rh, lh / rl, lh / rh];
+                    let &mn = candidates.iter().min().unwrap();
+                    let &mx = candidates.iter().max().unwrap();
+                    (mn, mx)
+                }
                 _ => unreachable!(),
             };
 
-            RangeLattice::Range(Range::new(ScalarInt::from(min_v), ScalarInt::from(max_v), signed))
+            RangeLattice::Range(Range::new(
+                ScalarInt::try_from_int(min_v, size).unwrap(),
+                ScalarInt::try_from_int(max_v, size).unwrap(),
+                signed,
+            ))
         } else {
             let to_u = |s: ScalarInt| -> u128 { s.to_uint(size) };
             let unsigned_max = size.unsigned_int_max();
@@ -645,6 +715,14 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                     let max_candidate = *candidates.iter().max().unwrap();
                     let mx = std::cmp::min(max_candidate, unsigned_max);
                     (mn, mx)
+                }
+                Div => {
+                    if rl == 0 {
+                        return RangeLattice::Top;
+                    }
+                    let min_val = ll / rh;
+                    let max_val = lh / rl;
+                    (min_val, max_val)
                 }
                 _ => unreachable!(),
             };
@@ -757,17 +835,25 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         match op {
             Shr => {
                 // FIXME: check these intervals
+                // Convert i128 results to u128 for unsigned integers
+                let min_val = (ll >> rh) as u128;
+                let max_val = (lh >> rl) as u128;
                 RangeLattice::Range(Range::new(
-                    ScalarInt::from(ll >> rh),
-                    ScalarInt::from(lh >> rl),
+                    ScalarInt::try_from_uint(min_val, size).unwrap(),
+                    ScalarInt::try_from_uint(max_val, size).unwrap(),
                     signed,
                 ))
             }
-            Shl => RangeLattice::Range(Range::new(
-                ScalarInt::from(ll << rl),
-                ScalarInt::from(lh << rh),
-                signed,
-            )),
+            Shl => {
+                // Convert i128 results to u128 for unsigned integers
+                let min_val = (ll << rl) as u128;
+                let max_val = (lh << rh) as u128;
+                RangeLattice::Range(Range::new(
+                    ScalarInt::try_from_uint(min_val, size).unwrap(),
+                    ScalarInt::try_from_uint(max_val, size).unwrap(),
+                    signed,
+                ))
+            }
             _ => unreachable!(),
         }
     }
