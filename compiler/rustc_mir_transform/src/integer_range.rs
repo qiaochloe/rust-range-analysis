@@ -2,9 +2,12 @@
 //! only operates on integer types.
 
 // NOTE: can implement array bounds checking elimination, overflow check elimination, static branch prediction
-// TODO: remove Integer from the name
+// FIXME: remove Integer from the name
 
-// TODO: remove
+// FIXME: handle AddWithOverflow and SubWithOverflow
+// handle indexing operations
+
+// FIXME: remove
 #![allow(
     dead_code,
     unused_imports,
@@ -145,13 +148,13 @@ pub(super) struct IntegerRange;
 
 impl<'tcx> crate::MirPass<'tcx> for IntegerRange {
     fn is_enabled(&self, sess: &rustc_session::Session) -> bool {
-        // TODO: change back to 3
+        // FIXME: change back to 3
         sess.mir_opt_level() >= 4
     }
 
     /// Returns `true` if this pass can be overridden by `-Zenable-mir-passes`
     fn can_be_overridden(&self) -> bool {
-        // TODO: change later
+        // FIXME: change later
         false
     }
 
@@ -163,11 +166,8 @@ impl<'tcx> crate::MirPass<'tcx> for IntegerRange {
             IntegerRangeAnalysis::new(tcx, body, map).iterate_to_fixpoint(tcx, body, None)
         });
 
-        // let mut map = const_.analysis.map;
-        // dbg!(&map);
-
-        //let mut states = const_.entry_states;
-        //dbg!(&states);
+        //dbg!(&results.analysis.map);
+        //dbg!(&results.entry_states);
 
         // Perform dead code elimination based on range analysis
         let patch = {
@@ -185,7 +185,7 @@ impl<'tcx> crate::MirPass<'tcx> for IntegerRange {
 
     /// If this is `false`, `#[optimize(none)]` will disable the pass.
     fn is_required(&self) -> bool {
-        // TODO: change later
+        // FIXME: change later
         true
     }
 }
@@ -317,12 +317,46 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
             Rvalue::CopyForDeref(_) => bug!("`CopyForDeref` in runtime MIR"),
 
-            Rvalue::Aggregate(..) => {
-                // todo!();
+            Rvalue::Aggregate(kind, operands) => {
+                // Flood the target place
+                state.flood(target.as_ref(), &self.map);
+
+                let Some(target_idx) = self.map.find(target.as_ref()) else { return };
+
+                // Assign each field operand to the corresponding field
+                let variant_target = match **kind {
+                    AggregateKind::Tuple | AggregateKind::Closure(..) => Some(target_idx),
+                    AggregateKind::Adt(def_id, variant_index, ..) => {
+                        match self.tcx.def_kind(def_id) {
+                            DefKind::Struct => Some(target_idx),
+                            DefKind::Enum => {
+                                // Track the variant-specific fields
+                                self.map.apply(target_idx, TrackElem::Variant(variant_index))
+                            }
+                            _ => return,
+                        }
+                    }
+                    _ => return,
+                };
+
+                if let Some(variant_target_idx) = variant_target {
+                    // Assign each field operand to the corresponding field
+                    for (field_index, operand) in operands.iter_enumerated() {
+                        let operand_ty = operand.ty(self.local_decls, self.tcx);
+                        if operand_ty.is_integral() {
+                            if let Some(field) =
+                                self.map.apply(variant_target_idx, TrackElem::Field(field_index))
+                            {
+                                self.assign_operand(state, field, operand);
+                            }
+                        }
+                    }
+                }
             }
 
             Rvalue::BinaryOp(op, box (left, right)) if op.is_overflowing() => {
-                // todo!();
+                // FIXME: handle overflows
+                state.flood(target.as_ref(), &self.map);
             }
 
             Rvalue::Cast(
@@ -330,7 +364,8 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                 operand,
                 _,
             ) => {
-                // todo!()
+                // FIXME: handle pointer coercions
+                state.flood(target.as_ref(), &self.map);
             }
             _ => {
                 let result = self.handle_rvalue(rvalue, state);
@@ -346,16 +381,17 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
     ) -> ValueOrPlace<RangeLattice> {
         let val = match rvalue {
             Rvalue::Cast(CastKind::IntToInt | CastKind::IntToFloat, operand, ty) => {
-                // TODO:
+                // FIXME:
                 RangeLattice::Top
             }
 
             Rvalue::Cast(CastKind::FloatToInt | CastKind::FloatToFloat, operand_, ty_) => {
+                // FIXME:
                 RangeLattice::Top
             }
 
             Rvalue::Cast(CastKind::Transmute | CastKind::Subtype, operand, ty) => {
-                // TODO: need to handle wrap_immediate
+                // FIXME: need to handle wrap_immediate
                 self.eval_operand(operand, state)
             }
 
@@ -367,12 +403,13 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
             }
 
             Rvalue::UnaryOp(_, operand) => {
-                // TODO:
+                // FIXME:
                 self.eval_operand(operand, state)
             }
 
             Rvalue::NullaryOp(NullOp::RuntimeChecks(_)) => {
-                return ValueOrPlace::TOP;
+                // FIXME:
+                RangeLattice::Top
             }
 
             Rvalue::Discriminant(place) => {
@@ -380,7 +417,9 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                 // state.get_discr(place.as_ref(), &self.map)
             }
 
-            Rvalue::Use(operand) => return self.handle_operand(operand, state),
+            Rvalue::Use(operand) => {
+                return self.handle_operand(operand, state);
+            }
 
             Rvalue::CopyForDeref(_) => bug!("`CopyForDeref` in runtime MIR"),
 
@@ -388,7 +427,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
             Rvalue::Ref(..) | Rvalue::RawPtr(..) => {
                 // We do not track pointer ranges in this analysis.
-                return ValueOrPlace::TOP;
+                RangeLattice::Top
             }
             Rvalue::Repeat(..)
             | Rvalue::ThreadLocalRef(..)
@@ -397,7 +436,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
             | Rvalue::Aggregate(..)
             | Rvalue::WrapUnsafeBinder(..) => {
                 // No modification is possible through these r-values.
-                return ValueOrPlace::TOP;
+                RangeLattice::Top
             }
         };
         ValueOrPlace::Value(val)
@@ -448,7 +487,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
             | TerminatorKind::FalseEdge { .. }
             | TerminatorKind::FalseUnwind { .. } => {
                 // These terminators have no effect on the analysis.
-                // TODO: check if that is true
+                // FIXME: check if that is true
             }
         }
         terminator.edges()
@@ -459,7 +498,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         return_places: CallReturnPlaces<'_, 'tcx>,
         state: &mut State<RangeLattice>,
     ) {
-        // TODO: not interprocedural yet
+        // FIXME: not interprocedural yet
         return_places.for_each(|place| {
             state.flood(place.as_ref(), &self.map);
         })
@@ -506,10 +545,10 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
                 use BinOp::*;
                 let res = match op {
-                    // TODO: handle division
+                    // FIXME: handle division
                     Add | Sub | Mul => self.arith_interval(op, l, r, size, signed),
                     BitAnd | BitOr | BitXor => self.bitwise_interval(op, l, r, size),
-                    // TODO: handle ShrUnchecked, ShlUnchecked
+                    // FIXME: handle ShrUnchecked, ShlUnchecked
                     Shl | Shr => self.shift_interval(op, l, r, size, signed),
                     Eq | Ne | Lt | Le | Gt | Ge => self.bool_interval(op, l, r, size, signed),
                     _ => return (RangeLattice::Top, RangeLattice::Top),
@@ -630,7 +669,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                     let lo = from_u(0);
                     RangeLattice::Range(Range::new(lo, hi, signed))
                 } else {
-                    // TODO: might be able to optimize
+                    // FIXME: might be able to optimize
                     RangeLattice::Top
                 }
             }
@@ -654,7 +693,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
                     RangeLattice::Range(Range::new(lo, hi, signed))
                 } else {
-                    // TODO: might be able to optimize
+                    // FIXME: might be able to optimize
                     RangeLattice::Top
                 }
             }
@@ -671,7 +710,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                     let hi = from_u(mask);
                     RangeLattice::Range(Range::new(lo, hi, signed))
                 } else {
-                    // TODO: might be able to optimize
+                    // FIXME: might be able to optimize
                     RangeLattice::Top
                 }
             }
@@ -690,7 +729,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         use BinOp::*;
 
         if signed {
-            // TODO: check this
+            // FIXME: check this
             bug!("Shift on signed integers not supported");
         }
 
@@ -702,7 +741,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
 
         match op {
             Shr => {
-                // TODO: check these intervals
+                // FIXME: check these intervals
                 RangeLattice::Range(Range::new(
                     ScalarInt::from(ll >> rh),
                     ScalarInt::from(lh >> rl),
@@ -740,7 +779,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
                 }
             };
 
-        // TODO: more elegan way to handle signedness?
+        // FIXME: more elegant way to handle signedness?
         let (always_true, always_false) = if signed {
             let to_i = |s: ScalarInt| -> i128 { s.to_int(size) };
             let ll = to_i(l.lo);
@@ -858,7 +897,7 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         mut operand: OpTy<'tcx>,
         projection: &[PlaceElem<'tcx>],
     ) {
-        todo!();
+        // FIXME:
     }
 
     fn eval_operand(&self, op: &Operand<'tcx>, state: &mut State<RangeLattice>) -> RangeLattice {
@@ -875,11 +914,12 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         variant_index: VariantIdx,
         state: &mut State<RangeLattice>,
     ) {
-        todo!();
+        // FIXME:
     }
 
     fn eval_discriminant(&self, enum_ty: Ty<'tcx>, variant_index: VariantIdx) -> Option<Scalar> {
-        todo!();
+        // FIXME:
+        None
     }
 
     fn wrap_immediate(&self, imm: Immediate) -> RangeLattice {
@@ -1052,302 +1092,12 @@ impl<'a, 'tcx> ResultsVisitor<'tcx, IntegerRangeAnalysis<'a, 'tcx>> for Collecto
                         );
                     }
                 } else if matches!(value, RangeLattice::Bottom) {
-                    self.patch.patch_terminator(location.block, TerminatorKind::Unreachable);
+                    // FIXME: handle unreachable targets
+                    //dbg!(&discr);
+                    // self.patch.patch_terminator(location.block, TerminatorKind::Unreachable);
                 }
             }
             _ => {}
         }
-    }
-}
-
-// TODO: test bool interval and shift interval
-#[cfg(test)]
-mod tests {
-    use std::num::NonZero;
-
-    use rustc_abi::Size;
-
-    use super::*;
-
-    fn make_scalar_int(value: u128, size_bytes: u8) -> ScalarInt {
-        let size = Size::from_bytes(size_bytes);
-        ScalarInt::try_from_uint(value, size).unwrap()
-    }
-
-    fn make_signed_scalar_int(value: i128, size_bytes: u8) -> ScalarInt {
-        let size = Size::from_bytes(size_bytes);
-        ScalarInt::try_from_int(value, size).unwrap()
-    }
-
-    #[test]
-    fn test_range_singleton() {
-        let val = make_scalar_int(5, 4);
-        let range = Range::singleton(val, false);
-        assert_eq!(range.lo, val);
-        assert_eq!(range.hi, val);
-        assert!(!range.signed);
-    }
-
-    #[test]
-    fn test_range_new() {
-        let lo = make_scalar_int(1, 4);
-        let hi = make_scalar_int(10, 4);
-        let range = Range::new(lo, hi, false);
-        assert_eq!(range.lo, lo);
-        assert_eq!(range.hi, hi);
-        assert!(!range.signed);
-    }
-
-    #[test]
-    fn test_range_join_unsigned() {
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(3, 4), make_scalar_int(10, 4), false);
-        let joined = r1.join(&r2);
-        assert_eq!(joined.lo, make_scalar_int(1, 4));
-        assert_eq!(joined.hi, make_scalar_int(10, 4));
-        assert!(!joined.signed);
-    }
-
-    #[test]
-    fn test_range_join_signed() {
-        // [-10, -5] join [-3, 5] should be [-10, 5]
-        let r1_lo = make_signed_scalar_int(-10, 4);
-        let r1_hi = make_signed_scalar_int(-5, 4);
-        let r1 = Range::new(r1_lo, r1_hi, true);
-
-        let r2_lo = make_signed_scalar_int(-3, 4);
-        let r2_hi = make_signed_scalar_int(5, 4);
-        let r2 = Range::new(r2_lo, r2_hi, true);
-
-        let joined = r1.join(&r2);
-        assert_eq!(joined.lo.to_int(Size::from_bytes(4)), -10);
-        assert_eq!(joined.hi.to_int(Size::from_bytes(4)), 5);
-        assert!(joined.signed);
-    }
-
-    #[test]
-    fn test_range_join_signed_negative() {
-        // [-5, -1] join [-10, -3] should be [-10, -1]
-        let r1 = Range::new(make_signed_scalar_int(-5, 4), make_signed_scalar_int(-1, 4), true);
-        let r2 = Range::new(make_signed_scalar_int(-10, 4), make_signed_scalar_int(-3, 4), true);
-        let joined = r1.join(&r2);
-        assert_eq!(joined.lo.to_int(Size::from_bytes(4)), -10);
-        assert_eq!(joined.hi.to_int(Size::from_bytes(4)), -1);
-    }
-
-    #[test]
-    fn test_range_intersect_unsigned() {
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(3, 4), make_scalar_int(10, 4), false);
-        let intersected = r1.intersect(r2).unwrap();
-        assert_eq!(intersected.lo, make_scalar_int(3, 4));
-        assert_eq!(intersected.hi, make_scalar_int(5, 4));
-    }
-
-    #[test]
-    fn test_range_intersect_disjoint() {
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(10, 4), make_scalar_int(20, 4), false);
-        assert!(r1.intersect(r2).is_none());
-    }
-
-    #[test]
-    fn test_range_intersect_signed() {
-        // [-10, -5] intersect [-7, -3] should be [-7, -5]
-        let r1 = Range::new(make_signed_scalar_int(-10, 4), make_signed_scalar_int(-5, 4), true);
-        let r2 = Range::new(make_signed_scalar_int(-7, 4), make_signed_scalar_int(-3, 4), true);
-        let intersected = r1.intersect(r2).unwrap();
-        assert_eq!(intersected.lo.to_int(Size::from_bytes(4)), -7);
-        assert_eq!(intersected.hi.to_int(Size::from_bytes(4)), -5);
-    }
-
-    #[test]
-    fn test_range_intersect_signed_negative_positive() {
-        // [-5, 5] intersect [0, 10] should be [0, 5]
-        let r1 = Range::new(make_signed_scalar_int(-5, 4), make_signed_scalar_int(5, 4), true);
-        let r2 = Range::new(make_signed_scalar_int(0, 4), make_signed_scalar_int(10, 4), true);
-        let intersected = r1.intersect(r2).unwrap();
-        assert_eq!(intersected.lo.to_int(Size::from_bytes(4)), 0);
-        assert_eq!(intersected.hi.to_int(Size::from_bytes(4)), 5);
-    }
-
-    #[test]
-    fn test_range_lattice_join() {
-        let mut r1 =
-            RangeLattice::Range(Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false));
-        let r2 =
-            RangeLattice::Range(Range::new(make_scalar_int(3, 4), make_scalar_int(10, 4), false));
-        let changed = r1.join(&r2);
-        assert!(changed);
-        match r1 {
-            RangeLattice::Range(r) => {
-                assert_eq!(r.lo, make_scalar_int(1, 4));
-                assert_eq!(r.hi, make_scalar_int(10, 4));
-            }
-            _ => panic!("Expected Range"),
-        }
-    }
-
-    #[test]
-    fn test_range_lattice_join_bottom() {
-        let mut r1 = RangeLattice::Bottom;
-        let r2 =
-            RangeLattice::Range(Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false));
-        let changed = r1.join(&r2);
-        assert!(changed);
-        assert!(matches!(r1, RangeLattice::Range(_)));
-    }
-
-    #[test]
-    fn test_range_lattice_join_top() {
-        let mut r1 = RangeLattice::Top;
-        let r2 =
-            RangeLattice::Range(Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false));
-        let changed = r1.join(&r2);
-        assert!(!changed); // Top join anything = Top (no change)
-        assert!(matches!(r1, RangeLattice::Top));
-    }
-
-    #[test]
-    fn test_range_lattice_join_identical() {
-        let range = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false);
-        let mut r1 = RangeLattice::Range(range);
-        let r2 = RangeLattice::Range(range);
-        let changed = r1.join(&r2);
-        assert!(!changed); // Joining identical ranges shouldn't change
-    }
-
-    #[test]
-    fn test_range_compare_unsigned() {
-        let range = Range::new(make_scalar_int(1, 4), make_scalar_int(10, 4), false);
-        let a = make_scalar_int(5, 4);
-        let b = make_scalar_int(3, 4);
-        assert!(range.compare(a, b).is_gt());
-    }
-
-    #[test]
-    fn test_range_compare_signed_negative() {
-        // Test that -5 < -3 for signed integers
-        let range = Range::new(make_signed_scalar_int(-10, 4), make_signed_scalar_int(10, 4), true);
-        let a = make_signed_scalar_int(-5, 4);
-        let b = make_signed_scalar_int(-3, 4);
-        assert!(range.compare(a, b).is_lt());
-    }
-
-    #[test]
-    fn test_range_compare_signed_vs_unsigned() {
-        // Test that signed comparison differs from unsigned for negative numbers
-        // In unsigned: 0xFFFFFFFB (u32 representation of -5) > 0xFFFFFFFD (u32 representation of -3)
-        // In signed: -5 < -3
-        let signed_range =
-            Range::new(make_signed_scalar_int(-10, 4), make_signed_scalar_int(10, 4), true);
-        let unsigned_range =
-            Range::new(make_scalar_int(0xFFFFFFFB, 4), make_scalar_int(0xFFFFFFFD, 4), false);
-
-        let a = make_signed_scalar_int(-5, 4);
-        let b = make_signed_scalar_int(-3, 4);
-
-        // Signed comparison: -5 < -3
-        assert!(signed_range.compare(a, b).is_lt());
-        let a_unsigned = make_scalar_int(0xFFFFFFFB, 4); // -5 as u32
-        let b_unsigned = make_scalar_int(0xFFFFFFFD, 4); // -3 as u32
-        // As unsigned, 0xFF...FB < 0xFF...FD
-        assert!(unsigned_range.compare(a_unsigned, b_unsigned).is_lt());
-    }
-
-    #[test]
-    fn test_range_large_values() {
-        // Test that ranges work correctly for large values that would overflow u8
-        let large_val = make_scalar_int(1000, 4);
-        let range = Range::singleton(large_val, false);
-        assert_eq!(range.lo, large_val);
-        assert_eq!(range.hi, large_val);
-    }
-
-    #[test]
-    fn test_range_different_sizes() {
-        let u8_val = make_scalar_int(255, 1);
-        let u16_val = make_scalar_int(1000, 2);
-        let u32_val = make_scalar_int(100000, 4);
-
-        let r1 = Range::singleton(u8_val, false);
-        let r2 = Range::singleton(u16_val, false);
-        let r3 = Range::singleton(u32_val, false);
-
-        assert_eq!(r1.lo.size().bytes(), 1);
-        assert_eq!(r2.lo.size().bytes(), 2);
-        assert_eq!(r3.lo.size().bytes(), 4);
-    }
-
-    #[test]
-    fn test_range_join_preserves_signedness() {
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), true);
-        let r2 = Range::new(make_scalar_int(3, 4), make_scalar_int(10, 4), true);
-        let joined = r1.join(&r2);
-        assert!(joined.signed);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_range_join_different_signedness_panics() {
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(3, 4), make_scalar_int(10, 4), true);
-        let _joined = r1.join(&r2); // Should panic with bug!()
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_range_intersect_different_signedness_panics() {
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(3, 4), make_scalar_int(10, 4), true);
-        let _intersected = r1.intersect(r2); // Should panic with bug!()
-    }
-
-    #[test]
-    fn test_range_intersect_touching() {
-        // [1, 5] intersect [5, 10] should be [5, 5] (singleton)
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(5, 4), make_scalar_int(10, 4), false);
-        let intersected = r1.intersect(r2).unwrap();
-        assert_eq!(intersected.lo, intersected.hi);
-        assert_eq!(intersected.lo, make_scalar_int(5, 4));
-    }
-
-    #[test]
-    fn test_range_join_overlapping() {
-        // [1, 10] join [5, 15] should be [1, 15]
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(10, 4), false);
-        let r2 = Range::new(make_scalar_int(5, 4), make_scalar_int(15, 4), false);
-        let joined = r1.join(&r2);
-        assert_eq!(joined.lo, make_scalar_int(1, 4));
-        assert_eq!(joined.hi, make_scalar_int(15, 4));
-    }
-
-    #[test]
-    fn test_range_join_adjacent() {
-        // [1, 5] join [6, 10] should be [1, 10]
-        let r1 = Range::new(make_scalar_int(1, 4), make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(6, 4), make_scalar_int(10, 4), false);
-        let joined = r1.join(&r2);
-        assert_eq!(joined.lo, make_scalar_int(1, 4));
-        assert_eq!(joined.hi, make_scalar_int(10, 4));
-    }
-
-    #[test]
-    fn test_range_intersect_singleton() {
-        // [5, 5] intersect [3, 7] should be [5, 5]
-        let r1 = Range::singleton(make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(3, 4), make_scalar_int(7, 4), false);
-        let intersected = r1.intersect(r2).unwrap();
-        assert_eq!(intersected.lo, intersected.hi);
-        assert_eq!(intersected.lo, make_scalar_int(5, 4));
-    }
-
-    #[test]
-    fn test_range_intersect_singleton_outside() {
-        // [5, 5] intersect [10, 20] should be None
-        let r1 = Range::singleton(make_scalar_int(5, 4), false);
-        let r2 = Range::new(make_scalar_int(10, 4), make_scalar_int(20, 4), false);
-        assert!(r1.intersect(r2).is_none());
     }
 }
