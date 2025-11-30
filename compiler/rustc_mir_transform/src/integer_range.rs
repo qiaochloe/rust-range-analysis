@@ -6,6 +6,7 @@
 
 // FIXME: handle AddWithOverflow and SubWithOverflow
 // handle indexing operations
+// handle cast operations
 
 // FIXME: remove
 #![allow(
@@ -217,7 +218,7 @@ impl<'tcx> Analysis<'tcx> for IntegerRangeAnalysis<'_, 'tcx> {
                     &self.map,
                 );
             } else {
-                state.flood_with(place_ref, &self.map, RangeLattice::Top);
+                state.flood(place_ref, &self.map);
             }
         }
     }
@@ -1121,6 +1122,61 @@ impl<'a, 'tcx> Collector<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> ResultsVisitor<'tcx, IntegerRangeAnalysis<'a, 'tcx>> for Collector<'a, 'tcx> {
+    fn visit_after_primary_statement_effect(
+        &mut self,
+        _analysis: &IntegerRangeAnalysis<'a, 'tcx>,
+        state: &State<RangeLattice>,
+        statement: &Statement<'tcx>,
+        location: Location,
+    ) {
+        // Check for assignments that can be constant-propagated
+        // FIXME: handle unary operations
+        if let StatementKind::Assign(box (place, rvalue)) = &statement.kind {
+            if let Rvalue::BinaryOp(op, box (left, right)) = rvalue {
+                let mut state_mut = state.clone();
+                // FIXME: handle overflows
+                let (result, _) = self.analysis.binary_op(&mut state_mut, *op, left, right);
+
+                // Can only constant-propagate if the range is a singleton
+                let RangeLattice::Range(range) = result else {
+                    return;
+                };
+                if range.lo != range.hi {
+                    return;
+                }
+
+                // Can only constant-propagate bools and integers
+                let ty = place.ty(self.body.local_decls(), self.tcx).ty;
+                let const_val = {
+                    if ty.is_bool() {
+                        match range.lo {
+                            ScalarInt::TRUE => Const::from_bool(self.tcx, true),
+                            ScalarInt::FALSE => Const::from_bool(self.tcx, false),
+                            _ => bug!(
+                                "Expected ScalarInt::TRUE or ScalarInt::FALSE, got {:#?}",
+                                range.lo
+                            ),
+                        }
+                    } else if ty.is_integral() {
+                        Const::from_scalar(self.tcx, Scalar::Int(range.lo), ty)
+                    } else {
+                        return;
+                    }
+                };
+
+                let const_operand = Operand::Constant(Box::new(ConstOperand {
+                    span: statement.source_info.span,
+                    const_: const_val,
+                    user_ty: None,
+                }));
+
+                // Replace the statement: nop the old one and add the new one
+                self.patch.nop_statement(location);
+                self.patch.add_assign(location, *place, Rvalue::Use(const_operand));
+            }
+        }
+    }
+
     fn visit_after_primary_terminator_effect(
         &mut self,
         _analysis: &IntegerRangeAnalysis<'a, 'tcx>,
