@@ -148,14 +148,12 @@ pub(super) struct IntegerRange;
 
 impl<'tcx> crate::MirPass<'tcx> for IntegerRange {
     fn is_enabled(&self, sess: &rustc_session::Session) -> bool {
-        // FIXME: change back to 3
-        sess.mir_opt_level() >= 4
+        sess.mir_opt_level() >= 3
     }
 
     /// Returns `true` if this pass can be overridden by `-Zenable-mir-passes`
     fn can_be_overridden(&self) -> bool {
-        // FIXME: change later
-        false
+        true
     }
 
     fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
@@ -185,8 +183,7 @@ impl<'tcx> crate::MirPass<'tcx> for IntegerRange {
 
     /// If this is `false`, `#[optimize(none)]` will disable the pass.
     fn is_required(&self) -> bool {
-        // FIXME: change later
-        true
+        false
     }
 }
 
@@ -355,8 +352,26 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
             }
 
             Rvalue::BinaryOp(op, box (left, right)) if op.is_overflowing() => {
-                // FIXME: handle overflows
+                // FIXME: check, taken from dataflow_const_prop.rs
                 state.flood(target.as_ref(), &self.map);
+
+                let Some(target) = self.map.find(target.as_ref()) else { return };
+
+                let value_target = self.map.apply(target, TrackElem::Field(0_u32.into()));
+                let overflow_target = self.map.apply(target, TrackElem::Field(1_u32.into()));
+
+                if value_target.is_some() || overflow_target.is_some() {
+                    let (val, overflow) = self.binary_op(state, *op, left, right);
+
+                    if let Some(value_target) = value_target {
+                        // We have flooded `target` earlier.
+                        state.insert_value_idx(value_target, val, &self.map);
+                    }
+                    if let Some(overflow_target) = overflow_target {
+                        // We have flooded `target` earlier.
+                        state.insert_value_idx(overflow_target, overflow, &self.map);
+                    }
+                }
             }
 
             Rvalue::Cast(
