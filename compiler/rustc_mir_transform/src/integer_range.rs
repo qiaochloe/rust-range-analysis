@@ -4,9 +4,17 @@
 // NOTE: can implement array bounds checking elimination, overflow check elimination, static branch prediction
 // FIXME: remove Integer from the name
 
-// FIXME: handle AddWithOverflow and SubWithOverflow
+// FIXME:
+// handle AddWithOverflow and SubWithOverflow
 // handle indexing operations
 // handle cast operations
+// char to int conversions
+// handle isize and usize
+// only u8 can be cast as char
+// char can be cast to u32
+// handle infinite loops, widening and lowering
+
+// FIXME: test casting
 
 // FIXME: remove
 #![allow(
@@ -192,6 +200,7 @@ struct IntegerRangeAnalysis<'a, 'tcx> {
     map: Map<'tcx>,
     tcx: TyCtxt<'tcx>,
     local_decls: &'a LocalDecls<'tcx>,
+    ecx: RefCell<InterpCx<'tcx, DummyMachine>>,
     typing_env: ty::TypingEnv<'tcx>,
 }
 
@@ -262,7 +271,13 @@ impl<'tcx> Analysis<'tcx> for IntegerRangeAnalysis<'_, 'tcx> {
 impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
     fn new(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, map: Map<'tcx>) -> Self {
         let typing_env = body.typing_env(tcx);
-        Self { map, tcx, local_decls: &body.local_decls, typing_env }
+        Self {
+            map,
+            tcx,
+            local_decls: &body.local_decls,
+            ecx: RefCell::new(InterpCx::new(tcx, DUMMY_SP, typing_env, DummyMachine)),
+            typing_env,
+        }
     }
 
     /// Get the valid range for a type.
@@ -438,19 +453,119 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         state: &mut State<RangeLattice>,
     ) -> ValueOrPlace<RangeLattice> {
         let val = match rvalue {
-            Rvalue::Cast(CastKind::IntToInt | CastKind::IntToFloat, operand, ty) => {
-                // FIXME:
+            Rvalue::Cast(CastKind::IntToInt, operand, ty) => {
+                // Only handle integral or bool types
+                // FIXME: handle char?
+                let operand_ty = operand.ty(self.local_decls, self.tcx);
+                if !operand_ty.is_integral() && !operand_ty.is_bool() {
+                    return ValueOrPlace::Value(RangeLattice::Top);
+                }
+                if !ty.is_integral() && !ty.is_bool() {
+                    return ValueOrPlace::Value(RangeLattice::Top);
+                }
+
+                // Get layouts
+                let Ok(operand_layout) =
+                    self.tcx.layout_of(self.typing_env.as_query_input(operand_ty))
+                else {
+                    return ValueOrPlace::Value(RangeLattice::Top);
+                };
+                let Ok(target_layout) = self.tcx.layout_of(self.typing_env.as_query_input(*ty))
+                else {
+                    return ValueOrPlace::Value(RangeLattice::Top);
+                };
+
+                // Get the target type's full range
+                let Some(type_range) = self.get_type_range(*ty) else {
+                    return ValueOrPlace::Value(RangeLattice::Top);
+                };
+
+                match self.eval_operand(operand, state) {
+                    RangeLattice::Range(range) => {
+                        let target_signed = ty.is_signed();
+                        let convert_bound = |bound: ScalarInt| -> ScalarInt {
+                            let imm_ty = ImmTy::from_scalar_int(bound, operand_layout);
+                            let result_imm_ty = self
+                                .ecx
+                                .borrow_mut()
+                                .int_to_int_or_float(&imm_ty, target_layout)
+                                .unwrap();
+                            match *result_imm_ty {
+                                Immediate::Scalar(Scalar::Int(v)) => v,
+                                _ => bug!(
+                                    "int_to_int_or_float returned non-integer for IntToInt cast"
+                                ),
+                            }
+                        };
+
+                        let lo = convert_bound(range.lo);
+                        let hi = convert_bound(range.hi);
+
+                        // Check if the source range is large enough to wrap around
+                        // Calculate the width of the source range
+                        let source_width = if range.signed {
+                            let lo_val = range.lo.to_int(operand_layout.size);
+                            let hi_val = range.hi.to_int(operand_layout.size);
+                            (hi_val - lo_val) as u128 + 1
+                        } else {
+                            let lo_val = range.lo.to_uint(operand_layout.size);
+                            let hi_val = range.hi.to_uint(operand_layout.size);
+                            hi_val - lo_val + 1
+                        };
+
+                        // Number of distinct values in the target type
+                        let target_num_values = target_layout.size.unsigned_int_max() + 1;
+
+                        // Check if range wraps: if hi < lo after conversion, or if
+                        // the source range is large enough to cover all target values
+                        let wraps = if target_signed {
+                            let lo_val = lo.to_int(target_layout.size);
+                            let hi_val = hi.to_int(target_layout.size);
+                            hi_val < lo_val || source_width > target_num_values
+                        } else {
+                            let lo_val = lo.to_uint(target_layout.size);
+                            let hi_val = hi.to_uint(target_layout.size);
+                            hi_val < lo_val || source_width > target_num_values
+                        };
+
+                        if wraps {
+                            RangeLattice::Range(type_range)
+                        } else {
+                            let converted_range = Range::new(lo, hi, target_signed);
+                            converted_range
+                                .intersect(type_range)
+                                .map(RangeLattice::Range)
+                                .unwrap_or(RangeLattice::Top)
+                        }
+                    }
+                    RangeLattice::Bottom => RangeLattice::Bottom,
+                    RangeLattice::Top => {
+                        // If operand is Top, check if we can at least provide the target type's range
+                        self.get_type_range(*ty)
+                            .map(RangeLattice::Range)
+                            .unwrap_or(RangeLattice::Top)
+                    }
+                }
+            }
+
+            Rvalue::Cast(CastKind::IntToFloat, _operand, _ty) => {
+                // Float ranges are not tracked, so return Top
                 RangeLattice::Top
             }
 
-            Rvalue::Cast(CastKind::FloatToInt | CastKind::FloatToFloat, operand_, ty_) => {
-                // FIXME:
+            Rvalue::Cast(CastKind::FloatToInt, _operand, ty) => {
+                // Return the target type's range
+                self.get_type_range(*ty).map(RangeLattice::Range).unwrap_or(RangeLattice::Top)
+            }
+
+            Rvalue::Cast(CastKind::FloatToFloat, _operand, _ty) => {
+                // Float ranges are not tracked, so return Top
                 RangeLattice::Top
             }
 
             Rvalue::Cast(CastKind::Transmute | CastKind::Subtype, operand, ty) => {
-                // FIXME: need to handle wrap_immediate
-                self.eval_operand(operand, state)
+                // FIXME: handle transmute/subtype
+                RangeLattice::Top
             }
 
             Rvalue::BinaryOp(op, box (left, right)) if !op.is_overflowing() => {
@@ -1023,19 +1138,6 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         // FIXME:
         None
     }
-
-    fn wrap_immediate(&self, imm: Immediate) -> RangeLattice {
-        match imm {
-            Immediate::Scalar(Scalar::Int(v)) => {
-                // FIXME:
-                // Default to unsigned if we don't have type information
-                // This is used in contexts where type info might not be available
-                RangeLattice::Range(Range::singleton(v, false))
-            }
-            Immediate::Uninit => RangeLattice::Bottom,
-            _ => RangeLattice::Top,
-        }
-    }
 }
 
 /// This is used to visualize the dataflow analysis.
@@ -1204,11 +1306,27 @@ impl<'a, 'tcx> ResultsVisitor<'tcx, IntegerRangeAnalysis<'a, 'tcx>> for Collecto
             }
 
             TerminatorKind::SwitchInt { discr, targets } => {
-                // First, check if we can evaluate the discriminant to a singleton range
+                /* FIXME: if there are multiple targets, we don't eliminate the otherwise branch
+                    even if it is not possible to take the otherwise branch.
+
+                    e.g. only the 2 branch below is removed
+
+                    fn test(x: bool) -> &'static str {
+                        match x as u8 {
+                            0 => "null",
+                            1 => "one",
+                            2 => "two",     // Unreachable
+                            _ => "unknown", // Unreachable
+                        }
+                    }
+                */
+
+
                 let mut state_mut = state.clone();
                 let value = self.analysis.eval_operand(discr, &mut state_mut);
 
                 if let RangeLattice::Range(Range { lo, hi, .. }) = value {
+                    // Check if the discriminant is a singleton
                     if lo == hi {
                         let bits = lo.to_bits_unchecked();
                         let target = targets.target_for_value(bits);
@@ -1226,17 +1344,16 @@ impl<'a, 'tcx> ResultsVisitor<'tcx, IntegerRangeAnalysis<'a, 'tcx>> for Collecto
                         .filter(|(value, _)| *value >= lo_bits && *value <= hi_bits)
                         .collect();
 
-                    let original_count = targets.iter().count();
-                    let num_explicit_targets = filtered.len();
+                    let num_filtered_targets = filtered.len();
 
-                    // If only one target is possible, simplify to goto
-                    if num_explicit_targets == 0 {
+                    // If only the otherwise target remains, replace with goto
+                    if num_filtered_targets == 0 {
                         let otherwise = targets.otherwise();
                         self.patch.patch_terminator(
                             location.block,
                             TerminatorKind::Goto { target: otherwise },
                         );
-                    } else if num_explicit_targets < original_count {
+                    } else if num_filtered_targets < targets.iter().count() {
                         // Multiple targets, but some were filtered
                         let otherwise = targets.otherwise();
                         let filtered_targets = SwitchTargets::new(filtered.into_iter(), otherwise);
