@@ -1,0 +1,167 @@
+- // MIR for `test` before IntegerRange
++ // MIR for `test` after IntegerRange
+  
+  fn test(_1: u8) -> () {
+      debug x => _1;
+      let mut _0: ();
+      let _2: ();
+      let mut _3: bool;
+      let mut _4: u8;
+      let mut _5: bool;
+      let mut _6: u8;
+      let _7: ();
+      let mut _8: bool;
+      let mut _9: u8;
+      let mut _10: bool;
+      let mut _11: u8;
+      let mut _12: !;
+      let _13: ();
+      let mut _14: bool;
+      let mut _15: u8;
+      let mut _16: !;
+      let _17: ();
+      let mut _18: bool;
+      let mut _19: u8;
+      let mut _20: !;
+  
+      bb0: {
+          StorageLive(_2);
+          StorageLive(_3);
+          StorageLive(_4);
+          _4 = copy _1;
+          _3 = Ge(move _4, const 10_u8);
+          switchInt(move _3) -> [0: bb12, otherwise: bb1];
+      }
+  
+      bb1: {
+          StorageDead(_4);
+          StorageLive(_5);
+          StorageLive(_6);
+          _6 = copy _1;
+          _5 = Le(move _6, const 20_u8);
+          switchInt(move _5) -> [0: bb8, otherwise: bb2];
+      }
+  
+      bb2: {
+          StorageDead(_6);
+          StorageLive(_7);
+          StorageLive(_8);
+          StorageLive(_9);
+          _9 = copy _1;
+          _8 = Ge(move _9, const 10_u8);
+          switchInt(move _8) -> [0: bb6, otherwise: bb3];
+      }
+  
+      bb3: {
+          StorageDead(_9);
+          StorageLive(_10);
+          StorageLive(_11);
+          _11 = copy _1;
+          _10 = Le(move _11, const 20_u8);
+          switchInt(move _10) -> [0: bb5, otherwise: bb4];
+      }
+  
+      bb4: {
+          StorageDead(_11);
+          _7 = const ();
+          StorageDead(_10);
+          StorageDead(_8);
+          StorageDead(_7);
+          _2 = const ();
+          goto -> bb11;
+      }
+  
+      bb5: {
+          StorageDead(_11);
+          goto -> bb7;
+      }
+  
+      bb6: {
+          StorageDead(_9);
+          goto -> bb7;
+      }
+  
+      bb7: {
+          StorageLive(_12);
+          _12 = core::panicking::panic(const "assertion failed: x >= 10 && x <= 20") -> unwind continue;
+      }
+  
+      bb8: {
+          StorageDead(_6);
+          StorageLive(_13);
+          StorageLive(_14);
+          StorageLive(_15);
+          _15 = copy _1;
+          _14 = Gt(move _15, const 20_u8);
+          switchInt(move _14) -> [0: bb10, otherwise: bb9];
+      }
+  
+      bb9: {
+          StorageDead(_15);
+          _13 = const ();
+          StorageDead(_14);
+          StorageDead(_13);
+          _2 = const ();
+          goto -> bb11;
+      }
+  
+      bb10: {
+          StorageDead(_15);
+          StorageLive(_16);
+          _16 = core::panicking::panic(const "assertion failed: x > 20") -> unwind continue;
+      }
+  
+      bb11: {
+          StorageDead(_5);
+          goto -> bb15;
+      }
+  
+      bb12: {
+          StorageDead(_4);
+          StorageLive(_17);
+          StorageLive(_18);
+          StorageLive(_19);
+          _19 = copy _1;
+          _18 = Lt(move _19, const 10_u8);
+          switchInt(move _18) -> [0: bb14, otherwise: bb13];
+      }
+  
+      bb13: {
+          StorageDead(_19);
+          _17 = const ();
+          StorageDead(_18);
+          StorageDead(_17);
+          _2 = const ();
+          goto -> bb15;
+      }
+  
+      bb14: {
+          StorageDead(_19);
+          StorageLive(_20);
+          _20 = core::panicking::panic(const "assertion failed: x < 10") -> unwind continue;
+      }
+  
+      bb15: {
+          StorageDead(_3);
+          StorageDead(_2);
+          _0 = const ();
+          return;
+      }
+  }
+  
+  ALLOC0 (size: 24, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 20 3c 20 31 30                         │ : x < 10
+  }
+  
+  ALLOC1 (size: 24, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 20 3e 20 32 30                         │ : x > 20
+  }
+  
+  ALLOC2 (size: 36, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 20 3e 3d 20 31 30 20 26 26 20 78 20 3c │ : x >= 10 && x <
+      0x20 │ 3d 20 32 30                                     │ = 20
+  }
+  

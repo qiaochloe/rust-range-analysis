@@ -1,0 +1,147 @@
+- // MIR for `test` before IntegerRange
++ // MIR for `test` after IntegerRange
+  
+  fn test(_1: u8) -> u8 {
+      debug x => _1;
+      let mut _0: u8;
+      let _2: u16;
+      let mut _3: u8;
+      let _4: ();
+      let mut _5: bool;
+      let mut _6: u16;
+      let mut _7: bool;
+      let mut _8: u16;
+      let mut _9: !;
+      let mut _11: u16;
+      let _12: ();
+      let mut _13: bool;
+      let mut _14: u8;
+      let mut _15: bool;
+      let mut _16: u8;
+      let mut _17: !;
+      scope 1 {
+          debug x_u16 => _2;
+          let _10: u8;
+          scope 2 {
+              debug x_u8 => _10;
+          }
+      }
+  
+      bb0: {
+          StorageLive(_2);
+          StorageLive(_3);
+          _3 = copy _1;
+          _2 = move _3 as u16 (IntToInt);
+          StorageDead(_3);
+          StorageLive(_4);
+          StorageLive(_5);
+          StorageLive(_6);
+          _6 = copy _2;
+-         _5 = Ge(move _6, const 0_u16);
+-         switchInt(move _5) -> [0: bb4, otherwise: bb1];
++         _5 = const true;
++         nop;
++         goto -> bb1;
+      }
+  
+      bb1: {
+          StorageDead(_6);
+          StorageLive(_7);
+          StorageLive(_8);
+          _8 = copy _2;
+-         _7 = Le(move _8, const 255_u16);
+-         switchInt(move _7) -> [0: bb3, otherwise: bb2];
++         _7 = const true;
++         nop;
++         goto -> bb2;
+      }
+  
+      bb2: {
+          StorageDead(_8);
+          _4 = const ();
+          StorageDead(_7);
+          StorageDead(_5);
+          StorageDead(_4);
+          StorageLive(_10);
+          StorageLive(_11);
+          _11 = copy _2;
+          _10 = move _11 as u8 (IntToInt);
+          StorageDead(_11);
+          StorageLive(_12);
+          StorageLive(_13);
+          StorageLive(_14);
+          _14 = copy _10;
+-         _13 = Ge(move _14, const 0_u8);
+-         switchInt(move _13) -> [0: bb7, otherwise: bb6];
++         _13 = const true;
++         nop;
++         goto -> bb6;
+      }
+  
+      bb3: {
+          StorageDead(_8);
+          goto -> bb5;
+      }
+  
+      bb4: {
+          StorageDead(_6);
+          goto -> bb5;
+      }
+  
+      bb5: {
+          StorageLive(_9);
+          _9 = core::panicking::panic(const "assertion failed: x_u16 >= 0 && x_u16 <= 255") -> unwind continue;
+      }
+  
+      bb6: {
+          StorageDead(_14);
+          StorageLive(_15);
+          StorageLive(_16);
+          _16 = copy _10;
+-         _15 = Le(move _16, const u8::MAX);
+-         switchInt(move _15) -> [0: bb9, otherwise: bb8];
++         _15 = const true;
++         nop;
++         goto -> bb8;
+      }
+  
+      bb7: {
+          StorageDead(_14);
+          goto -> bb10;
+      }
+  
+      bb8: {
+          StorageDead(_16);
+          _12 = const ();
+          StorageDead(_15);
+          StorageDead(_13);
+          StorageDead(_12);
+          _0 = copy _10;
+          StorageDead(_10);
+          StorageDead(_2);
+          return;
+      }
+  
+      bb9: {
+          StorageDead(_16);
+          goto -> bb10;
+      }
+  
+      bb10: {
+          StorageLive(_17);
+          _17 = core::panicking::panic(const "assertion failed: x_u8 >= 0 && x_u8 <= 255") -> unwind continue;
+      }
+  }
+  
+  ALLOC0 (size: 42, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 5f 75 38 20 3e 3d 20 30 20 26 26 20 78 │ : x_u8 >= 0 && x
+      0x20 │ 5f 75 38 20 3c 3d 20 32 35 35                   │ _u8 <= 255
+  }
+  
+  ALLOC1 (size: 44, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 5f 75 31 36 20 3e 3d 20 30 20 26 26 20 │ : x_u16 >= 0 && 
+      0x20 │ 78 5f 75 31 36 20 3c 3d 20 32 35 35             │ x_u16 <= 255
+  }
+  

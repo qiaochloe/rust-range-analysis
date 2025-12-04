@@ -1,0 +1,101 @@
+- // MIR for `test` before IntegerRange
++ // MIR for `test` after IntegerRange
+  
+  fn test(_1: u8) -> &str {
+      debug x => _1;
+      let mut _0: &str;
+      let mut _2: bool;
+      let mut _3: u8;
+  
+      bb0: {
+          StorageLive(_2);
+          StorageLive(_3);
+          _3 = copy _1;
+          _2 = Le(move _3, const 10_u8);
+          switchInt(move _2) -> [0: bb9, otherwise: bb1];
+      }
+  
+      bb1: {
+          StorageDead(_3);
+          switchInt(copy _1) -> [0: bb8, 1: bb7, 5: bb6, 10: bb5, 20: bb4, 100: bb3, otherwise: bb2];
+      }
+  
+      bb2: {
+          _0 = const "other";
+          goto -> bb10;
+      }
+  
+      bb3: {
+          _0 = const "hundred";
+          goto -> bb10;
+      }
+  
+      bb4: {
+          _0 = const "twenty";
+          goto -> bb10;
+      }
+  
+      bb5: {
+          _0 = const "ten";
+          goto -> bb10;
+      }
+  
+      bb6: {
+          _0 = const "five";
+          goto -> bb10;
+      }
+  
+      bb7: {
+          _0 = const "one";
+          goto -> bb10;
+      }
+  
+      bb8: {
+          _0 = const "zero";
+          goto -> bb10;
+      }
+  
+      bb9: {
+          StorageDead(_3);
+          _0 = const "unknown";
+          goto -> bb10;
+      }
+  
+      bb10: {
+          StorageDead(_2);
+          return;
+      }
+  }
+  
+  ALLOC0 (size: 7, align: 1) {
+      75 6e 6b 6e 6f 77 6e                            │ unknown
+  }
+  
+  ALLOC1 (size: 5, align: 1) {
+      6f 74 68 65 72                                  │ other
+  }
+  
+  ALLOC2 (size: 7, align: 1) {
+      68 75 6e 64 72 65 64                            │ hundred
+  }
+  
+  ALLOC3 (size: 6, align: 1) {
+      74 77 65 6e 74 79                               │ twenty
+  }
+  
+  ALLOC4 (size: 3, align: 1) {
+      74 65 6e                                        │ ten
+  }
+  
+  ALLOC5 (size: 4, align: 1) {
+      66 69 76 65                                     │ five
+  }
+  
+  ALLOC6 (size: 3, align: 1) {
+      6f 6e 65                                        │ one
+  }
+  
+  ALLOC7 (size: 4, align: 1) {
+      7a 65 72 6f                                     │ zero
+  }
+  

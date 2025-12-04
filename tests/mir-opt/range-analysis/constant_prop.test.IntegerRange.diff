@@ -1,0 +1,104 @@
+- // MIR for `test` before IntegerRange
++ // MIR for `test` after IntegerRange
+  
+  fn test() -> u8 {
+      let mut _0: u8;
+      let _1: u8;
+      let mut _4: u8;
+      let mut _5: u8;
+      let mut _7: u8;
+      let mut _8: u8;
+      let mut _11: u8;
+      let mut _12: u8;
+      let mut _13: u8;
+      let mut _14: u8;
+      let mut _15: u8;
+      let mut _16: u8;
+      scope 1 {
+          debug x => _1;
+          let _2: u8;
+          scope 2 {
+              debug y => _2;
+              let _3: u8;
+              scope 3 {
+                  debug sum => _3;
+                  let _6: u8;
+                  scope 4 {
+                      debug prod => _6;
+                      let _9: u8;
+                      scope 5 {
+                          debug z => _9;
+                          let _10: u8;
+                          scope 6 {
+                              debug bitwise => _10;
+                          }
+                      }
+                  }
+              }
+          }
+      }
+  
+      bb0: {
+          StorageLive(_1);
+          _1 = const 5_u8;
+          StorageLive(_2);
+          _2 = const 10_u8;
+          StorageLive(_3);
+          StorageLive(_4);
+          _4 = copy _1;
+          StorageLive(_5);
+          _5 = copy _2;
+-         _3 = Add(move _4, move _5);
++         _3 = const 15_u8;
++         nop;
+          StorageDead(_5);
+          StorageDead(_4);
+          StorageLive(_6);
+          StorageLive(_7);
+          _7 = copy _1;
+          StorageLive(_8);
+          _8 = copy _2;
+-         _6 = Mul(move _7, move _8);
++         _6 = const 50_u8;
++         nop;
+          StorageDead(_8);
+          StorageDead(_7);
+          StorageLive(_9);
+          _9 = const 12_u8;
+          StorageLive(_10);
+          StorageLive(_11);
+          _11 = copy _1;
+          StorageLive(_12);
+          _12 = copy _9;
+-         _10 = BitAnd(move _11, move _12);
++         _10 = const 4_u8;
++         nop;
+          StorageDead(_12);
+          StorageDead(_11);
+          StorageLive(_13);
+          StorageLive(_14);
+          _14 = copy _3;
+          StorageLive(_15);
+          _15 = copy _6;
+-         _13 = Add(move _14, move _15);
++         _13 = const 65_u8;
++         nop;
+          StorageDead(_15);
+          StorageDead(_14);
+          StorageLive(_16);
+          _16 = copy _10;
+-         _0 = Add(move _13, move _16);
++         _0 = const 69_u8;
++         nop;
+          StorageDead(_16);
+          StorageDead(_13);
+          StorageDead(_10);
+          StorageDead(_9);
+          StorageDead(_6);
+          StorageDead(_3);
+          StorageDead(_2);
+          StorageDead(_1);
+          return;
+      }
+  }
+  

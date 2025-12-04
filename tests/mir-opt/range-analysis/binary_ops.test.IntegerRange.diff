@@ -1,0 +1,1040 @@
+- // MIR for `test` before IntegerRange
++ // MIR for `test` after IntegerRange
+  
+  fn test(_1: u8, _2: u8, _3: i8, _4: i8, _5: u8) -> () {
+      debug x => _1;
+      debug y => _2;
+      debug x_signed => _3;
+      debug y_signed => _4;
+      debug shift => _5;
+      let mut _0: ();
+      let _6: u8;
+      let mut _7: u8;
+      let mut _8: u8;
+      let mut _10: u8;
+      let mut _11: u8;
+      let mut _13: u8;
+      let mut _14: u8;
+      let mut _16: bool;
+      let mut _17: u8;
+      let mut _18: u8;
+      let mut _19: u8;
+      let mut _20: bool;
+      let _21: ();
+      let mut _22: bool;
+      let mut _23: u8;
+      let mut _24: bool;
+      let mut _25: u8;
+      let mut _26: !;
+      let _27: ();
+      let mut _28: bool;
+      let mut _29: u8;
+      let mut _30: bool;
+      let mut _31: u8;
+      let mut _32: !;
+      let _33: ();
+      let mut _34: bool;
+      let mut _35: u8;
+      let mut _36: bool;
+      let mut _37: u8;
+      let mut _38: !;
+      let _39: ();
+      let mut _40: bool;
+      let mut _41: u8;
+      let mut _42: bool;
+      let mut _43: u8;
+      let mut _44: !;
+      let mut _46: i8;
+      let mut _47: i8;
+      let mut _49: i8;
+      let mut _50: i8;
+      let mut _52: i8;
+      let mut _53: i8;
+      let _54: ();
+      let mut _55: bool;
+      let mut _56: i8;
+      let mut _57: bool;
+      let mut _58: i8;
+      let mut _59: !;
+      let _60: ();
+      let mut _61: bool;
+      let mut _62: i8;
+      let mut _63: bool;
+      let mut _64: i8;
+      let mut _65: !;
+      let _66: ();
+      let mut _67: bool;
+      let mut _68: i8;
+      let mut _69: bool;
+      let mut _70: i8;
+      let mut _71: !;
+      let mut _73: u8;
+      let mut _74: u8;
+      let mut _76: u8;
+      let mut _77: u8;
+      let mut _79: u8;
+      let mut _80: u8;
+      let _81: ();
+      let mut _82: bool;
+      let mut _83: u8;
+      let mut _84: bool;
+      let mut _85: u8;
+      let mut _86: !;
+      let _87: ();
+      let mut _88: bool;
+      let mut _89: u8;
+      let mut _90: bool;
+      let mut _91: u8;
+      let mut _92: !;
+      let _93: ();
+      let mut _94: bool;
+      let mut _95: u8;
+      let mut _96: bool;
+      let mut _97: u8;
+      let mut _98: !;
+      let mut _100: u8;
+      let mut _101: u8;
+      let mut _103: u8;
+      let mut _104: u8;
+      let mut _106: u8;
+      let mut _107: u8;
+      let mut _109: u8;
+      let mut _110: u8;
+      let _111: ();
+      let mut _112: bool;
+      let mut _113: u8;
+      let mut _114: bool;
+      let mut _115: u8;
+      let mut _116: !;
+      let _117: ();
+      let mut _118: bool;
+      let mut _119: u8;
+      let mut _120: bool;
+      let mut _121: u8;
+      let mut _122: !;
+      let _123: ();
+      let mut _124: bool;
+      let mut _125: u8;
+      let mut _126: bool;
+      let mut _127: u8;
+      let mut _128: !;
+      let _129: ();
+      let mut _130: bool;
+      let mut _131: u8;
+      let mut _132: bool;
+      let mut _133: u8;
+      let mut _134: !;
+      scope 1 {
+          debug sum => _6;
+          let _9: u8;
+          scope 2 {
+              debug diff => _9;
+              let _12: u8;
+              scope 3 {
+                  debug prod => _12;
+                  let _15: u8;
+                  scope 4 {
+                      debug quot => _15;
+                      let _45: i8;
+                      scope 5 {
+                          debug sum => _45;
+                          let _48: i8;
+                          scope 6 {
+                              debug diff => _48;
+                              let _51: i8;
+                              scope 7 {
+                                  debug prod => _51;
+                                  let _72: u8;
+                                  scope 8 {
+                                      debug and_result => _72;
+                                      let _75: u8;
+                                      scope 9 {
+                                          debug or_result => _75;
+                                          let _78: u8;
+                                          scope 10 {
+                                              debug xor_result => _78;
+                                              let _99: u8;
+                                              scope 11 {
+                                                  debug shl_result => _99;
+                                                  let _102: u8;
+                                                  scope 12 {
+                                                      debug shr_result => _102;
+                                                      let _105: u8;
+                                                      scope 13 {
+                                                          debug shl_result2 => _105;
+                                                          let _108: u8;
+                                                          scope 14 {
+                                                              debug shr_result2 => _108;
+                                                          }
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      }
+  
+      bb0: {
+          StorageLive(_6);
+          StorageLive(_7);
+          _7 = copy _1;
+          StorageLive(_8);
+          _8 = copy _2;
+          _6 = Add(move _7, move _8);
+          StorageDead(_8);
+          StorageDead(_7);
+          StorageLive(_9);
+          StorageLive(_10);
+          _10 = copy _1;
+          StorageLive(_11);
+          _11 = copy _2;
+          _9 = Sub(move _10, move _11);
+          StorageDead(_11);
+          StorageDead(_10);
+          StorageLive(_12);
+          StorageLive(_13);
+          _13 = copy _1;
+          StorageLive(_14);
+          _14 = copy _2;
+          _12 = Mul(move _13, move _14);
+          StorageDead(_14);
+          StorageDead(_13);
+          StorageLive(_15);
+          StorageLive(_16);
+          StorageLive(_17);
+          _17 = copy _2;
+          _16 = Ne(move _17, const 0_u8);
+          switchInt(move _16) -> [0: bb3, otherwise: bb1];
+      }
+  
+      bb1: {
+          StorageDead(_17);
+          StorageLive(_18);
+          _18 = copy _1;
+          StorageLive(_19);
+          _19 = copy _2;
+          _20 = Eq(copy _19, const 0_u8);
+          assert(!move _20, "attempt to divide `{}` by zero", copy _18) -> [success: bb2, unwind continue];
+      }
+  
+      bb2: {
+          _15 = Div(move _18, move _19);
+          StorageDead(_19);
+          StorageDead(_18);
+          goto -> bb4;
+      }
+  
+      bb3: {
+          StorageDead(_17);
+          _15 = const 0_u8;
+          goto -> bb4;
+      }
+  
+      bb4: {
+          StorageDead(_16);
+          StorageLive(_21);
+          StorageLive(_22);
+          StorageLive(_23);
+          _23 = copy _6;
+-         _22 = Ge(move _23, const 0_u8);
+-         switchInt(move _22) -> [0: bb8, otherwise: bb5];
++         _22 = const true;
++         nop;
++         goto -> bb5;
+      }
+  
+      bb5: {
+          StorageDead(_23);
+          StorageLive(_24);
+          StorageLive(_25);
+          _25 = copy _6;
+-         _24 = Le(move _25, const u8::MAX);
+-         switchInt(move _24) -> [0: bb7, otherwise: bb6];
++         _24 = const true;
++         nop;
++         goto -> bb6;
+      }
+  
+      bb6: {
+          StorageDead(_25);
+          _21 = const ();
+          StorageDead(_24);
+          StorageDead(_22);
+          StorageDead(_21);
+          StorageLive(_27);
+          StorageLive(_28);
+          StorageLive(_29);
+          _29 = copy _12;
+-         _28 = Ge(move _29, const 0_u8);
+-         switchInt(move _28) -> [0: bb11, otherwise: bb10];
++         _28 = const true;
++         nop;
++         goto -> bb10;
+      }
+  
+      bb7: {
+          StorageDead(_25);
+          goto -> bb9;
+      }
+  
+      bb8: {
+          StorageDead(_23);
+          goto -> bb9;
+      }
+  
+      bb9: {
+          StorageLive(_26);
+          _26 = core::panicking::panic(const "assertion failed: sum >= 0 && sum <= 255") -> unwind continue;
+      }
+  
+      bb10: {
+          StorageDead(_29);
+          StorageLive(_30);
+          StorageLive(_31);
+          _31 = copy _12;
+-         _30 = Le(move _31, const u8::MAX);
+-         switchInt(move _30) -> [0: bb13, otherwise: bb12];
++         _30 = const true;
++         nop;
++         goto -> bb12;
+      }
+  
+      bb11: {
+          StorageDead(_29);
+          goto -> bb14;
+      }
+  
+      bb12: {
+          StorageDead(_31);
+          _27 = const ();
+          StorageDead(_30);
+          StorageDead(_28);
+          StorageDead(_27);
+          StorageLive(_33);
+          StorageLive(_34);
+          StorageLive(_35);
+          _35 = copy _15;
+-         _34 = Ge(move _35, const 0_u8);
+-         switchInt(move _34) -> [0: bb16, otherwise: bb15];
++         _34 = const true;
++         nop;
++         goto -> bb15;
+      }
+  
+      bb13: {
+          StorageDead(_31);
+          goto -> bb14;
+      }
+  
+      bb14: {
+          StorageLive(_32);
+          _32 = core::panicking::panic(const "assertion failed: prod >= 0 && prod <= 255") -> unwind continue;
+      }
+  
+      bb15: {
+          StorageDead(_35);
+          StorageLive(_36);
+          StorageLive(_37);
+          _37 = copy _15;
+-         _36 = Le(move _37, const u8::MAX);
+-         switchInt(move _36) -> [0: bb18, otherwise: bb17];
++         _36 = const true;
++         nop;
++         goto -> bb17;
+      }
+  
+      bb16: {
+          StorageDead(_35);
+          goto -> bb19;
+      }
+  
+      bb17: {
+          StorageDead(_37);
+          _33 = const ();
+          StorageDead(_36);
+          StorageDead(_34);
+          StorageDead(_33);
+          StorageLive(_39);
+          StorageLive(_40);
+          StorageLive(_41);
+          _41 = copy _9;
+-         _40 = Ge(move _41, const 0_u8);
+-         switchInt(move _40) -> [0: bb21, otherwise: bb20];
++         _40 = const true;
++         nop;
++         goto -> bb20;
+      }
+  
+      bb18: {
+          StorageDead(_37);
+          goto -> bb19;
+      }
+  
+      bb19: {
+          StorageLive(_38);
+          _38 = core::panicking::panic(const "assertion failed: quot >= 0 && quot <= 255") -> unwind continue;
+      }
+  
+      bb20: {
+          StorageDead(_41);
+          StorageLive(_42);
+          StorageLive(_43);
+          _43 = copy _9;
+-         _42 = Le(move _43, const u8::MAX);
+-         switchInt(move _42) -> [0: bb23, otherwise: bb22];
++         _42 = const true;
++         nop;
++         goto -> bb22;
+      }
+  
+      bb21: {
+          StorageDead(_41);
+          goto -> bb24;
+      }
+  
+      bb22: {
+          StorageDead(_43);
+          _39 = const ();
+          StorageDead(_42);
+          StorageDead(_40);
+          StorageDead(_39);
+          StorageLive(_45);
+          StorageLive(_46);
+          _46 = copy _3;
+          StorageLive(_47);
+          _47 = copy _4;
+          _45 = Add(move _46, move _47);
+          StorageDead(_47);
+          StorageDead(_46);
+          StorageLive(_48);
+          StorageLive(_49);
+          _49 = copy _3;
+          StorageLive(_50);
+          _50 = copy _4;
+          _48 = Sub(move _49, move _50);
+          StorageDead(_50);
+          StorageDead(_49);
+          StorageLive(_51);
+          StorageLive(_52);
+          _52 = copy _3;
+          StorageLive(_53);
+          _53 = copy _4;
+          _51 = Mul(move _52, move _53);
+          StorageDead(_53);
+          StorageDead(_52);
+          StorageLive(_54);
+          StorageLive(_55);
+          StorageLive(_56);
+          _56 = copy _45;
+-         _55 = Ge(move _56, const i8::MIN);
+-         switchInt(move _55) -> [0: bb26, otherwise: bb25];
++         _55 = const true;
++         nop;
++         goto -> bb25;
+      }
+  
+      bb23: {
+          StorageDead(_43);
+          goto -> bb24;
+      }
+  
+      bb24: {
+          StorageLive(_44);
+          _44 = core::panicking::panic(const "assertion failed: diff >= 0 && diff <= 255") -> unwind continue;
+      }
+  
+      bb25: {
+          StorageDead(_56);
+          StorageLive(_57);
+          StorageLive(_58);
+          _58 = copy _45;
+-         _57 = Le(move _58, const i8::MAX);
+-         switchInt(move _57) -> [0: bb28, otherwise: bb27];
++         _57 = const true;
++         nop;
++         goto -> bb27;
+      }
+  
+      bb26: {
+          StorageDead(_56);
+          goto -> bb29;
+      }
+  
+      bb27: {
+          StorageDead(_58);
+          _54 = const ();
+          StorageDead(_57);
+          StorageDead(_55);
+          StorageDead(_54);
+          StorageLive(_60);
+          StorageLive(_61);
+          StorageLive(_62);
+          _62 = copy _48;
+-         _61 = Ge(move _62, const i8::MIN);
+-         switchInt(move _61) -> [0: bb31, otherwise: bb30];
++         _61 = const true;
++         nop;
++         goto -> bb30;
+      }
+  
+      bb28: {
+          StorageDead(_58);
+          goto -> bb29;
+      }
+  
+      bb29: {
+          StorageLive(_59);
+          _59 = core::panicking::panic(const "assertion failed: sum >= -128 && sum <= 127") -> unwind continue;
+      }
+  
+      bb30: {
+          StorageDead(_62);
+          StorageLive(_63);
+          StorageLive(_64);
+          _64 = copy _48;
+-         _63 = Le(move _64, const i8::MAX);
+-         switchInt(move _63) -> [0: bb33, otherwise: bb32];
++         _63 = const true;
++         nop;
++         goto -> bb32;
+      }
+  
+      bb31: {
+          StorageDead(_62);
+          goto -> bb34;
+      }
+  
+      bb32: {
+          StorageDead(_64);
+          _60 = const ();
+          StorageDead(_63);
+          StorageDead(_61);
+          StorageDead(_60);
+          StorageLive(_66);
+          StorageLive(_67);
+          StorageLive(_68);
+          _68 = copy _51;
+-         _67 = Ge(move _68, const i8::MIN);
+-         switchInt(move _67) -> [0: bb36, otherwise: bb35];
++         _67 = const true;
++         nop;
++         goto -> bb35;
+      }
+  
+      bb33: {
+          StorageDead(_64);
+          goto -> bb34;
+      }
+  
+      bb34: {
+          StorageLive(_65);
+          _65 = core::panicking::panic(const "assertion failed: diff >= -128 && diff <= 127") -> unwind continue;
+      }
+  
+      bb35: {
+          StorageDead(_68);
+          StorageLive(_69);
+          StorageLive(_70);
+          _70 = copy _51;
+-         _69 = Le(move _70, const i8::MAX);
+-         switchInt(move _69) -> [0: bb38, otherwise: bb37];
++         _69 = const true;
++         nop;
++         goto -> bb37;
+      }
+  
+      bb36: {
+          StorageDead(_68);
+          goto -> bb39;
+      }
+  
+      bb37: {
+          StorageDead(_70);
+          _66 = const ();
+          StorageDead(_69);
+          StorageDead(_67);
+          StorageDead(_66);
+          StorageLive(_72);
+          StorageLive(_73);
+          _73 = copy _1;
+          StorageLive(_74);
+          _74 = copy _2;
+          _72 = BitAnd(move _73, move _74);
+          StorageDead(_74);
+          StorageDead(_73);
+          StorageLive(_75);
+          StorageLive(_76);
+          _76 = copy _1;
+          StorageLive(_77);
+          _77 = copy _2;
+          _75 = BitOr(move _76, move _77);
+          StorageDead(_77);
+          StorageDead(_76);
+          StorageLive(_78);
+          StorageLive(_79);
+          _79 = copy _1;
+          StorageLive(_80);
+          _80 = copy _2;
+          _78 = BitXor(move _79, move _80);
+          StorageDead(_80);
+          StorageDead(_79);
+          StorageLive(_81);
+          StorageLive(_82);
+          StorageLive(_83);
+          _83 = copy _72;
+-         _82 = Ge(move _83, const 0_u8);
+-         switchInt(move _82) -> [0: bb41, otherwise: bb40];
++         _82 = const true;
++         nop;
++         goto -> bb40;
+      }
+  
+      bb38: {
+          StorageDead(_70);
+          goto -> bb39;
+      }
+  
+      bb39: {
+          StorageLive(_71);
+          _71 = core::panicking::panic(const "assertion failed: prod >= -128 && prod <= 127") -> unwind continue;
+      }
+  
+      bb40: {
+          StorageDead(_83);
+          StorageLive(_84);
+          StorageLive(_85);
+          _85 = copy _72;
+-         _84 = Le(move _85, const u8::MAX);
+-         switchInt(move _84) -> [0: bb43, otherwise: bb42];
++         _84 = const true;
++         nop;
++         goto -> bb42;
+      }
+  
+      bb41: {
+          StorageDead(_83);
+          goto -> bb44;
+      }
+  
+      bb42: {
+          StorageDead(_85);
+          _81 = const ();
+          StorageDead(_84);
+          StorageDead(_82);
+          StorageDead(_81);
+          StorageLive(_87);
+          StorageLive(_88);
+          StorageLive(_89);
+          _89 = copy _75;
+-         _88 = Ge(move _89, const 0_u8);
+-         switchInt(move _88) -> [0: bb46, otherwise: bb45];
++         _88 = const true;
++         nop;
++         goto -> bb45;
+      }
+  
+      bb43: {
+          StorageDead(_85);
+          goto -> bb44;
+      }
+  
+      bb44: {
+          StorageLive(_86);
+          _86 = core::panicking::panic(const "assertion failed: and_result >= 0 && and_result <= 255") -> unwind continue;
+      }
+  
+      bb45: {
+          StorageDead(_89);
+          StorageLive(_90);
+          StorageLive(_91);
+          _91 = copy _75;
+-         _90 = Le(move _91, const u8::MAX);
+-         switchInt(move _90) -> [0: bb48, otherwise: bb47];
++         _90 = const true;
++         nop;
++         goto -> bb47;
+      }
+  
+      bb46: {
+          StorageDead(_89);
+          goto -> bb49;
+      }
+  
+      bb47: {
+          StorageDead(_91);
+          _87 = const ();
+          StorageDead(_90);
+          StorageDead(_88);
+          StorageDead(_87);
+          StorageLive(_93);
+          StorageLive(_94);
+          StorageLive(_95);
+          _95 = copy _78;
+-         _94 = Ge(move _95, const 0_u8);
+-         switchInt(move _94) -> [0: bb51, otherwise: bb50];
++         _94 = const true;
++         nop;
++         goto -> bb50;
+      }
+  
+      bb48: {
+          StorageDead(_91);
+          goto -> bb49;
+      }
+  
+      bb49: {
+          StorageLive(_92);
+          _92 = core::panicking::panic(const "assertion failed: or_result >= 0 && or_result <= 255") -> unwind continue;
+      }
+  
+      bb50: {
+          StorageDead(_95);
+          StorageLive(_96);
+          StorageLive(_97);
+          _97 = copy _78;
+-         _96 = Le(move _97, const u8::MAX);
+-         switchInt(move _96) -> [0: bb53, otherwise: bb52];
++         _96 = const true;
++         nop;
++         goto -> bb52;
+      }
+  
+      bb51: {
+          StorageDead(_95);
+          goto -> bb54;
+      }
+  
+      bb52: {
+          StorageDead(_97);
+          _93 = const ();
+          StorageDead(_96);
+          StorageDead(_94);
+          StorageDead(_93);
+          StorageLive(_99);
+          StorageLive(_100);
+          _100 = copy _1;
+          StorageLive(_101);
+          _101 = copy _5;
+          _99 = Shl(move _100, move _101);
+          StorageDead(_101);
+          StorageDead(_100);
+          StorageLive(_102);
+          StorageLive(_103);
+          _103 = copy _1;
+          StorageLive(_104);
+          _104 = copy _5;
+          _102 = Shr(move _103, move _104);
+          StorageDead(_104);
+          StorageDead(_103);
+          StorageLive(_105);
+          StorageLive(_106);
+          _106 = copy _2;
+          StorageLive(_107);
+          _107 = copy _5;
+          _105 = Shl(move _106, move _107);
+          StorageDead(_107);
+          StorageDead(_106);
+          StorageLive(_108);
+          StorageLive(_109);
+          _109 = copy _2;
+          StorageLive(_110);
+          _110 = copy _5;
+          _108 = Shr(move _109, move _110);
+          StorageDead(_110);
+          StorageDead(_109);
+          StorageLive(_111);
+          StorageLive(_112);
+          StorageLive(_113);
+          _113 = copy _99;
+-         _112 = Ge(move _113, const 0_u8);
+-         switchInt(move _112) -> [0: bb56, otherwise: bb55];
++         _112 = const true;
++         nop;
++         goto -> bb55;
+      }
+  
+      bb53: {
+          StorageDead(_97);
+          goto -> bb54;
+      }
+  
+      bb54: {
+          StorageLive(_98);
+          _98 = core::panicking::panic(const "assertion failed: xor_result >= 0 && xor_result <= 255") -> unwind continue;
+      }
+  
+      bb55: {
+          StorageDead(_113);
+          StorageLive(_114);
+          StorageLive(_115);
+          _115 = copy _99;
+-         _114 = Le(move _115, const u8::MAX);
+-         switchInt(move _114) -> [0: bb58, otherwise: bb57];
++         _114 = const true;
++         nop;
++         goto -> bb57;
+      }
+  
+      bb56: {
+          StorageDead(_113);
+          goto -> bb59;
+      }
+  
+      bb57: {
+          StorageDead(_115);
+          _111 = const ();
+          StorageDead(_114);
+          StorageDead(_112);
+          StorageDead(_111);
+          StorageLive(_117);
+          StorageLive(_118);
+          StorageLive(_119);
+          _119 = copy _102;
+-         _118 = Ge(move _119, const 0_u8);
+-         switchInt(move _118) -> [0: bb61, otherwise: bb60];
++         _118 = const true;
++         nop;
++         goto -> bb60;
+      }
+  
+      bb58: {
+          StorageDead(_115);
+          goto -> bb59;
+      }
+  
+      bb59: {
+          StorageLive(_116);
+          _116 = core::panicking::panic(const "assertion failed: shl_result >= 0 && shl_result <= 255") -> unwind continue;
+      }
+  
+      bb60: {
+          StorageDead(_119);
+          StorageLive(_120);
+          StorageLive(_121);
+          _121 = copy _102;
+-         _120 = Le(move _121, const u8::MAX);
+-         switchInt(move _120) -> [0: bb63, otherwise: bb62];
++         _120 = const true;
++         nop;
++         goto -> bb62;
+      }
+  
+      bb61: {
+          StorageDead(_119);
+          goto -> bb64;
+      }
+  
+      bb62: {
+          StorageDead(_121);
+          _117 = const ();
+          StorageDead(_120);
+          StorageDead(_118);
+          StorageDead(_117);
+          StorageLive(_123);
+          StorageLive(_124);
+          StorageLive(_125);
+          _125 = copy _105;
+-         _124 = Ge(move _125, const 0_u8);
+-         switchInt(move _124) -> [0: bb66, otherwise: bb65];
++         _124 = const true;
++         nop;
++         goto -> bb65;
+      }
+  
+      bb63: {
+          StorageDead(_121);
+          goto -> bb64;
+      }
+  
+      bb64: {
+          StorageLive(_122);
+          _122 = core::panicking::panic(const "assertion failed: shr_result >= 0 && shr_result <= 255") -> unwind continue;
+      }
+  
+      bb65: {
+          StorageDead(_125);
+          StorageLive(_126);
+          StorageLive(_127);
+          _127 = copy _105;
+          _126 = Le(move _127, const 1_u8);
+          switchInt(move _126) -> [0: bb68, otherwise: bb67];
+      }
+  
+      bb66: {
+          StorageDead(_125);
+          goto -> bb69;
+      }
+  
+      bb67: {
+          StorageDead(_127);
+          _123 = const ();
+          StorageDead(_126);
+          StorageDead(_124);
+          StorageDead(_123);
+          StorageLive(_129);
+          StorageLive(_130);
+          StorageLive(_131);
+          _131 = copy _108;
+-         _130 = Ge(move _131, const 0_u8);
+-         switchInt(move _130) -> [0: bb71, otherwise: bb70];
++         _130 = const true;
++         nop;
++         goto -> bb70;
+      }
+  
+      bb68: {
+          StorageDead(_127);
+          goto -> bb69;
+      }
+  
+      bb69: {
+          StorageLive(_128);
+          _128 = core::panicking::panic(const "assertion failed: shl_result2 >= 0 && shl_result2 <= 1") -> unwind continue;
+      }
+  
+      bb70: {
+          StorageDead(_131);
+          StorageLive(_132);
+          StorageLive(_133);
+          _133 = copy _108;
+          _132 = Le(move _133, const 1_u8);
+          switchInt(move _132) -> [0: bb73, otherwise: bb72];
+      }
+  
+      bb71: {
+          StorageDead(_131);
+          goto -> bb74;
+      }
+  
+      bb72: {
+          StorageDead(_133);
+          _129 = const ();
+          StorageDead(_132);
+          StorageDead(_130);
+          StorageDead(_129);
+          _0 = const ();
+          StorageDead(_108);
+          StorageDead(_105);
+          StorageDead(_102);
+          StorageDead(_99);
+          StorageDead(_78);
+          StorageDead(_75);
+          StorageDead(_72);
+          StorageDead(_51);
+          StorageDead(_48);
+          StorageDead(_45);
+          StorageDead(_15);
+          StorageDead(_12);
+          StorageDead(_9);
+          StorageDead(_6);
+          return;
+      }
+  
+      bb73: {
+          StorageDead(_133);
+          goto -> bb74;
+      }
+  
+      bb74: {
+          StorageLive(_134);
+          _134 = core::panicking::panic(const "assertion failed: shr_result2 >= 0 && shr_result2 <= 1") -> unwind continue;
+      }
+  }
+  
+  ALLOC0 (size: 54, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 73 68 72 5f 72 65 73 75 6c 74 32 20 3e 3d │ : shr_result2 >=
+      0x20 │ 20 30 20 26 26 20 73 68 72 5f 72 65 73 75 6c 74 │  0 && shr_result
+      0x30 │ 32 20 3c 3d 20 31                               │ 2 <= 1
+  }
+  
+  ALLOC1 (size: 54, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 73 68 6c 5f 72 65 73 75 6c 74 32 20 3e 3d │ : shl_result2 >=
+      0x20 │ 20 30 20 26 26 20 73 68 6c 5f 72 65 73 75 6c 74 │  0 && shl_result
+      0x30 │ 32 20 3c 3d 20 31                               │ 2 <= 1
+  }
+  
+  ALLOC2 (size: 54, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 73 68 72 5f 72 65 73 75 6c 74 20 3e 3d 20 │ : shr_result >= 
+      0x20 │ 30 20 26 26 20 73 68 72 5f 72 65 73 75 6c 74 20 │ 0 && shr_result 
+      0x30 │ 3c 3d 20 32 35 35                               │ <= 255
+  }
+  
+  ALLOC3 (size: 54, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 73 68 6c 5f 72 65 73 75 6c 74 20 3e 3d 20 │ : shl_result >= 
+      0x20 │ 30 20 26 26 20 73 68 6c 5f 72 65 73 75 6c 74 20 │ 0 && shl_result 
+      0x30 │ 3c 3d 20 32 35 35                               │ <= 255
+  }
+  
+  ALLOC4 (size: 54, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 6f 72 5f 72 65 73 75 6c 74 20 3e 3d 20 │ : xor_result >= 
+      0x20 │ 30 20 26 26 20 78 6f 72 5f 72 65 73 75 6c 74 20 │ 0 && xor_result 
+      0x30 │ 3c 3d 20 32 35 35                               │ <= 255
+  }
+  
+  ALLOC5 (size: 52, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 6f 72 5f 72 65 73 75 6c 74 20 3e 3d 20 30 │ : or_result >= 0
+      0x20 │ 20 26 26 20 6f 72 5f 72 65 73 75 6c 74 20 3c 3d │  && or_result <=
+      0x30 │ 20 32 35 35                                     │  255
+  }
+  
+  ALLOC6 (size: 54, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 61 6e 64 5f 72 65 73 75 6c 74 20 3e 3d 20 │ : and_result >= 
+      0x20 │ 30 20 26 26 20 61 6e 64 5f 72 65 73 75 6c 74 20 │ 0 && and_result 
+      0x30 │ 3c 3d 20 32 35 35                               │ <= 255
+  }
+  
+  ALLOC7 (size: 45, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 70 72 6f 64 20 3e 3d 20 2d 31 32 38 20 26 │ : prod >= -128 &
+      0x20 │ 26 20 70 72 6f 64 20 3c 3d 20 31 32 37          │ & prod <= 127
+  }
+  
+  ALLOC8 (size: 45, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 64 69 66 66 20 3e 3d 20 2d 31 32 38 20 26 │ : diff >= -128 &
+      0x20 │ 26 20 64 69 66 66 20 3c 3d 20 31 32 37          │ & diff <= 127
+  }
+  
+  ALLOC9 (size: 43, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 73 75 6d 20 3e 3d 20 2d 31 32 38 20 26 26 │ : sum >= -128 &&
+      0x20 │ 20 73 75 6d 20 3c 3d 20 31 32 37                │  sum <= 127
+  }
+  
+  ALLOC10 (size: 42, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 64 69 66 66 20 3e 3d 20 30 20 26 26 20 64 │ : diff >= 0 && d
+      0x20 │ 69 66 66 20 3c 3d 20 32 35 35                   │ iff <= 255
+  }
+  
+  ALLOC11 (size: 42, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 71 75 6f 74 20 3e 3d 20 30 20 26 26 20 71 │ : quot >= 0 && q
+      0x20 │ 75 6f 74 20 3c 3d 20 32 35 35                   │ uot <= 255
+  }
+  
+  ALLOC12 (size: 42, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 70 72 6f 64 20 3e 3d 20 30 20 26 26 20 70 │ : prod >= 0 && p
+      0x20 │ 72 6f 64 20 3c 3d 20 32 35 35                   │ rod <= 255
+  }
+  
+  ALLOC13 (size: 40, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 73 75 6d 20 3e 3d 20 30 20 26 26 20 73 75 │ : sum >= 0 && su
+      0x20 │ 6d 20 3c 3d 20 32 35 35                         │ m <= 255
+  }
+  

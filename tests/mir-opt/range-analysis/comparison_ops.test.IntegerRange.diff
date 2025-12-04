@@ -1,0 +1,254 @@
+- // MIR for `test` before IntegerRange
++ // MIR for `test` after IntegerRange
+  
+  fn test(_1: u8, _2: u8) -> bool {
+      debug x => _1;
+      debug y => _2;
+      let mut _0: bool;
+      let _3: bool;
+      let mut _4: bool;
+      let mut _5: u8;
+      let mut _6: bool;
+      let mut _7: u8;
+      let mut _8: u8;
+      let mut _9: u8;
+      let mut _11: bool;
+      let mut _12: u8;
+      let mut _13: bool;
+      let mut _14: u8;
+      let mut _15: u8;
+      let mut _16: u8;
+      let mut _18: bool;
+      let mut _19: u8;
+      let mut _20: u8;
+      let mut _22: bool;
+      let mut _23: u8;
+      let mut _24: bool;
+      let mut _25: u8;
+      let mut _26: u8;
+      let mut _27: u8;
+      let mut _28: bool;
+      let mut _29: bool;
+      let mut _30: bool;
+      scope 1 {
+          debug lt_result => _3;
+          let _10: bool;
+          scope 2 {
+              debug gt_result => _10;
+              let _17: bool;
+              scope 3 {
+                  debug eq_result => _17;
+                  let _21: bool;
+                  scope 4 {
+                      debug ne_result => _21;
+                  }
+              }
+          }
+      }
+  
+      bb0: {
+          StorageLive(_3);
+          StorageLive(_4);
+          StorageLive(_5);
+          _5 = copy _1;
+          _4 = Le(move _5, const 10_u8);
+          switchInt(move _4) -> [0: bb4, otherwise: bb1];
+      }
+  
+      bb1: {
+          StorageDead(_5);
+          StorageLive(_6);
+          StorageLive(_7);
+          _7 = copy _2;
+          _6 = Ge(move _7, const 20_u8);
+          switchInt(move _6) -> [0: bb3, otherwise: bb2];
+      }
+  
+      bb2: {
+          StorageDead(_7);
+          StorageLive(_8);
+          _8 = copy _1;
+          StorageLive(_9);
+          _9 = copy _2;
+          _3 = Lt(move _8, move _9);
+          StorageDead(_9);
+          StorageDead(_8);
+          goto -> bb6;
+      }
+  
+      bb3: {
+          StorageDead(_7);
+          goto -> bb5;
+      }
+  
+      bb4: {
+          StorageDead(_5);
+          goto -> bb5;
+      }
+  
+      bb5: {
+          _3 = const false;
+          goto -> bb6;
+      }
+  
+      bb6: {
+          StorageDead(_6);
+          StorageDead(_4);
+          StorageLive(_10);
+          StorageLive(_11);
+          StorageLive(_12);
+          _12 = copy _1;
+          _11 = Le(move _12, const 10_u8);
+          switchInt(move _11) -> [0: bb10, otherwise: bb7];
+      }
+  
+      bb7: {
+          StorageDead(_12);
+          StorageLive(_13);
+          StorageLive(_14);
+          _14 = copy _2;
+          _13 = Ge(move _14, const 20_u8);
+          switchInt(move _13) -> [0: bb9, otherwise: bb8];
+      }
+  
+      bb8: {
+          StorageDead(_14);
+          StorageLive(_15);
+          _15 = copy _1;
+          StorageLive(_16);
+          _16 = copy _2;
+          _10 = Gt(move _15, move _16);
+          StorageDead(_16);
+          StorageDead(_15);
+          goto -> bb12;
+      }
+  
+      bb9: {
+          StorageDead(_14);
+          goto -> bb11;
+      }
+  
+      bb10: {
+          StorageDead(_12);
+          goto -> bb11;
+      }
+  
+      bb11: {
+          _10 = const true;
+          goto -> bb12;
+      }
+  
+      bb12: {
+          StorageDead(_13);
+          StorageDead(_11);
+          StorageLive(_17);
+          StorageLive(_18);
+          StorageLive(_19);
+          _19 = copy _1;
+          _18 = Eq(move _19, const 5_u8);
+          switchInt(move _18) -> [0: bb14, otherwise: bb13];
+      }
+  
+      bb13: {
+          StorageDead(_19);
+          StorageLive(_20);
+          _20 = copy _1;
+          _17 = Eq(move _20, const 5_u8);
+          StorageDead(_20);
+          goto -> bb15;
+      }
+  
+      bb14: {
+          StorageDead(_19);
+          _17 = const false;
+          goto -> bb15;
+      }
+  
+      bb15: {
+          StorageDead(_18);
+          StorageLive(_21);
+          StorageLive(_22);
+          StorageLive(_23);
+          _23 = copy _1;
+          _22 = Le(move _23, const 10_u8);
+          switchInt(move _22) -> [0: bb19, otherwise: bb16];
+      }
+  
+      bb16: {
+          StorageDead(_23);
+          StorageLive(_24);
+          StorageLive(_25);
+          _25 = copy _2;
+          _24 = Ge(move _25, const 20_u8);
+          switchInt(move _24) -> [0: bb18, otherwise: bb17];
+      }
+  
+      bb17: {
+          StorageDead(_25);
+          StorageLive(_26);
+          _26 = copy _1;
+          StorageLive(_27);
+          _27 = copy _2;
+          _21 = Ne(move _26, move _27);
+          StorageDead(_27);
+          StorageDead(_26);
+          goto -> bb21;
+      }
+  
+      bb18: {
+          StorageDead(_25);
+          goto -> bb20;
+      }
+  
+      bb19: {
+          StorageDead(_23);
+          goto -> bb20;
+      }
+  
+      bb20: {
+          _21 = const false;
+          goto -> bb21;
+      }
+  
+      bb21: {
+          StorageDead(_24);
+          StorageDead(_22);
+          StorageLive(_28);
+          _28 = copy _3;
+          switchInt(move _28) -> [0: bb25, otherwise: bb22];
+      }
+  
+      bb22: {
+          StorageLive(_29);
+          _29 = copy _10;
+          switchInt(move _29) -> [0: bb23, otherwise: bb25];
+      }
+  
+      bb23: {
+          StorageLive(_30);
+          _30 = copy _17;
+          switchInt(move _30) -> [0: bb25, otherwise: bb24];
+      }
+  
+      bb24: {
+          _0 = copy _21;
+          goto -> bb26;
+      }
+  
+      bb25: {
+          _0 = const false;
+          goto -> bb26;
+      }
+  
+      bb26: {
+          StorageDead(_30);
+          StorageDead(_29);
+          StorageDead(_28);
+          StorageDead(_21);
+          StorageDead(_17);
+          StorageDead(_10);
+          StorageDead(_3);
+          return;
+      }
+  }
+  

@@ -1,5 +1,4 @@
-//! Range analysis finds lower and upper bounds to the values that variables can assume. Currently
-//! only operates on integer types.
+//! Range analysis finds lower and upper bounds to the values that variables can assume.
 
 // NOTE: can implement array bounds checking elimination, overflow check elimination, static branch prediction
 // FIXME: remove Integer from the name
@@ -15,6 +14,36 @@
 // handle infinite loops, widening and lowering
 
 // FIXME: test casting
+
+/* TESTS
+
+NOT OPTIMIZING:
+COMPARISON_OPS
+CONTROL_FLOW
+RANGE_INTERSECTION
+SWITCH_INT_OPT
+
+PASSING:
+binary_ops
+bool_u8_cast (can be more aggressive wtih match)
+constant_prop
+int_to_int_cast
+simple_division
+
+FAILING TO COMPILE:
+nested_loops
+widening
+*/
+// - assert_opt doesn't optimize out the assert
+// - comparison_ops doesn't optimize out the assert
+// - switch_int_opt doesn't optimize out the match
+// - shift_ops has an unrelated can't convert to uint bug
+
+// FIXME: can't handle control flow
+// e.g. if x < 10 { assert!(x < 10) };
+
+// FIXME: check to_i(|s: ScalarInt| -> i128 { s.to_int(s.size()) });
+// whether we should use s.size() or size
 
 // FIXME: remove
 #![allow(
@@ -57,7 +86,6 @@ use crate::patch::MirPatch;
 pub struct Range {
     pub lo: ScalarInt,
     pub hi: ScalarInt,
-    /// Whether the value is of a signed integer type.
     pub signed: bool,
 }
 
@@ -761,94 +789,85 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
         size: Size,
         signed: bool,
     ) -> RangeLattice {
-        use std::cmp::{max, min};
-
         use BinOp::*;
 
-        if signed {
-            let to_i = |s: ScalarInt| -> i128 { s.to_int(size) };
-            let ll = to_i(l.lo);
-            let lh = to_i(l.hi);
-            let rl = to_i(r.lo);
-            let rh = to_i(r.hi);
-
-            let (min_v, max_v) = match op {
-                Add => (ll + rl, lh + rh),
-                Sub => (ll - rh, lh - rl),
-                Mul => {
-                    let candidates = [ll * rl, ll * rh, lh * rl, lh * rh];
-                    let &mn = candidates.iter().min().unwrap();
-                    let &mx = candidates.iter().max().unwrap();
-                    (mn, mx)
-                }
-                Div => {
-                    // Division by zero is UB
-                    if rl <= 0 && rh >= 0 {
-                        return RangeLattice::Top;
-                    }
-                    let candidates = [ll / rl, ll / rh, lh / rl, lh / rh];
-                    let &mn = candidates.iter().min().unwrap();
-                    let &mx = candidates.iter().max().unwrap();
-                    (mn, mx)
-                }
-                _ => unreachable!(),
-            };
-
-            RangeLattice::Range(Range::new(
-                ScalarInt::try_from_int(min_v, size).unwrap(),
-                ScalarInt::try_from_int(max_v, size).unwrap(),
-                signed,
-            ))
+        // Get the type and layout for creating ImmTy values
+        let ty = if signed {
+            match size.bytes() {
+                1 => self.tcx.types.i8,
+                2 => self.tcx.types.i16,
+                4 => self.tcx.types.i32,
+                8 => self.tcx.types.i64,
+                16 => self.tcx.types.i128,
+                _ => return RangeLattice::Top,
+            }
         } else {
-            let to_u = |s: ScalarInt| -> u128 { s.to_uint(size) };
-            let unsigned_max = size.unsigned_int_max();
+            match size.bytes() {
+                1 => self.tcx.types.u8,
+                2 => self.tcx.types.u16,
+                4 => self.tcx.types.u32,
+                8 => self.tcx.types.u64,
+                16 => self.tcx.types.u128,
+                _ => return RangeLattice::Top,
+            }
+        };
+        let Ok(layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty)) else {
+            return RangeLattice::Top;
+        };
 
-            let ll = to_u(l.lo);
-            let lh = to_u(l.hi);
-            let rl = to_u(r.lo);
-            let rh = to_u(r.hi);
+        // Evaluate all corner cases using ecx
+        let candidates = [(l.lo, r.lo), (l.lo, r.hi), (l.hi, r.lo), (l.hi, r.hi)];
 
-            // NOTE: saturating is nightly
-            let (min_v, max_v) = match op {
-                Add => {
-                    let min_val = ll.saturating_add(rl);
-                    let max_val = std::cmp::min(lh.saturating_add(rh), unsigned_max);
-                    (min_val, max_val)
-                }
-                Sub => {
-                    let min_val = ll.saturating_sub(rh);
-                    let max_val = std::cmp::min(lh.saturating_sub(rl), unsigned_max);
-                    (min_val, max_val)
-                }
-                Mul => {
-                    let candidates = [
-                        ll.saturating_mul(rl),
-                        ll.saturating_mul(rh),
-                        lh.saturating_mul(rl),
-                        lh.saturating_mul(rh),
-                    ];
-                    let mn = *candidates.iter().min().unwrap();
-                    let max_candidate = *candidates.iter().max().unwrap();
-                    let mx = std::cmp::min(max_candidate, unsigned_max);
-                    (mn, mx)
-                }
-                Div => {
-                    if rl == 0 {
-                        return RangeLattice::Top;
-                    }
-                    let min_val = ll / rh;
-                    let max_val = lh / rl;
-                    (min_val, max_val)
-                }
-                _ => unreachable!(),
-            };
+        let mut results: Vec<ScalarInt> = Vec::new();
+        let mut ecx = self.ecx.borrow_mut();
 
-            let res_lo = ScalarInt::try_from_uint(min_v, size)
-                .unwrap_or_else(|| ScalarInt::try_from_uint(unsigned_max, size).unwrap());
-            let res_hi = ScalarInt::try_from_uint(max_v, size)
-                .unwrap_or_else(|| ScalarInt::try_from_uint(unsigned_max, size).unwrap());
-            RangeLattice::Range(Range::new(res_lo, res_hi, signed))
+        for (left_val, right_val) in candidates.iter() {
+            // Convert ScalarInt to Scalar
+            let left_scalar = Scalar::from_uint(left_val.to_bits_unchecked(), size);
+            let right_scalar = Scalar::from_uint(right_val.to_bits_unchecked(), size);
+
+            // Create ImmTy values
+            let left_imm = ImmTy::from_scalar(left_scalar, layout);
+            let right_imm = ImmTy::from_scalar(right_scalar, layout);
+
+            // Evaluate using ecx
+            if let Some(result) = ecx.binary_op(op, &left_imm, &right_imm).discard_err() {
+                let scalar = result.to_scalar();
+                if let Ok(scalar_int) = scalar.try_to_scalar_int() {
+                    results.push(scalar_int);
+                }
+            }
         }
+
+        drop(ecx);
+
+        if results.is_empty() {
+            return RangeLattice::Top;
+        }
+
+        // Find min and max from results
+        let min_val = results
+            .iter()
+            .min_by(|a, b| {
+                if signed {
+                    a.to_int(size).cmp(&b.to_int(size))
+                } else {
+                    a.to_uint(size).cmp(&b.to_uint(size))
+                }
+            })
+            .unwrap();
+        let max_val = results
+            .iter()
+            .max_by(|a, b| {
+                if signed {
+                    a.to_int(size).cmp(&b.to_int(size))
+                } else {
+                    a.to_uint(size).cmp(&b.to_uint(size))
+                }
+            })
+            .unwrap();
+
+        RangeLattice::Range(Range::new(*min_val, *max_val, signed))
     }
 
     fn bitwise_interval(&self, op: BinOp, l: Range, r: Range, size: Size) -> RangeLattice {
@@ -937,41 +956,83 @@ impl<'a, 'tcx> IntegerRangeAnalysis<'a, 'tcx> {
     ) -> RangeLattice {
         use BinOp::*;
 
-        if signed {
-            // FIXME: check this
-            bug!("Shift on signed integers not supported");
+        // Get the type and layout for creating ImmTy values
+        let ty = if signed {
+            match size.bytes() {
+                1 => self.tcx.types.i8,
+                2 => self.tcx.types.i16,
+                4 => self.tcx.types.i32,
+                8 => self.tcx.types.i64,
+                16 => self.tcx.types.i128,
+                _ => return RangeLattice::Top,
+            }
+        } else {
+            match size.bytes() {
+                1 => self.tcx.types.u8,
+                2 => self.tcx.types.u16,
+                4 => self.tcx.types.u32,
+                8 => self.tcx.types.u64,
+                16 => self.tcx.types.u128,
+                _ => return RangeLattice::Top,
+            }
+        };
+        let Ok(layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty)) else {
+            return RangeLattice::Top;
+        };
+
+        // For shift operations, we need to evaluate all combinations of l.{lo,hi} with r.{lo,hi}
+        let candidates = [(l.lo, r.lo), (l.lo, r.hi), (l.hi, r.lo), (l.hi, r.hi)];
+
+        let mut results: Vec<ScalarInt> = Vec::new();
+        let mut ecx = self.ecx.borrow_mut();
+
+        for (left_val, right_val) in candidates.iter() {
+            // Convert ScalarInt to Scalar
+            let left_scalar = Scalar::from_uint(left_val.to_bits_unchecked(), size);
+            let right_scalar = Scalar::from_uint(right_val.to_bits_unchecked(), size);
+
+            // Create ImmTy values
+            let left_imm = ImmTy::from_scalar(left_scalar, layout);
+            let right_imm = ImmTy::from_scalar(right_scalar, layout);
+
+            // Evaluate using ecx
+            if let Some(result) = ecx.binary_op(op, &left_imm, &right_imm).discard_err() {
+                let scalar = result.to_scalar();
+                if let Ok(scalar_int) = scalar.try_to_scalar_int() {
+                    results.push(scalar_int);
+                }
+            }
         }
 
-        let to_i = |s: ScalarInt| -> i128 { s.to_int(size) };
-        let ll = to_i(l.lo);
-        let lh = to_i(l.hi);
-        let rl = to_i(r.lo);
-        let rh = to_i(r.hi);
+        drop(ecx);
 
-        match op {
-            Shr => {
-                // FIXME: check these intervals
-                // Convert i128 results to u128 for unsigned integers
-                let min_val = (ll >> rh) as u128;
-                let max_val = (lh >> rl) as u128;
-                RangeLattice::Range(Range::new(
-                    ScalarInt::try_from_uint(min_val, size).unwrap(),
-                    ScalarInt::try_from_uint(max_val, size).unwrap(),
-                    signed,
-                ))
-            }
-            Shl => {
-                // Convert i128 results to u128 for unsigned integers
-                let min_val = (ll << rl) as u128;
-                let max_val = (lh << rh) as u128;
-                RangeLattice::Range(Range::new(
-                    ScalarInt::try_from_uint(min_val, size).unwrap(),
-                    ScalarInt::try_from_uint(max_val, size).unwrap(),
-                    signed,
-                ))
-            }
-            _ => unreachable!(),
+        if results.is_empty() {
+            return RangeLattice::Top;
         }
+
+        // Find min and max from results
+        let min_val = results
+            .iter()
+            .min_by(|a, b| {
+                if signed {
+                    a.to_int(size).cmp(&b.to_int(size))
+                } else {
+                    a.to_uint(size).cmp(&b.to_uint(size))
+                }
+            })
+            .unwrap();
+        let max_val = results
+            .iter()
+            .max_by(|a, b| {
+                if signed {
+                    a.to_int(size).cmp(&b.to_int(size))
+                } else {
+                    a.to_uint(size).cmp(&b.to_uint(size))
+                }
+            })
+            .unwrap();
+
+        RangeLattice::Range(Range::new(*min_val, *max_val, signed))
     }
 
     fn bool_interval(
@@ -1320,7 +1381,6 @@ impl<'a, 'tcx> ResultsVisitor<'tcx, IntegerRangeAnalysis<'a, 'tcx>> for Collecto
                         }
                     }
                 */
-
 
                 let mut state_mut = state.clone();
                 let value = self.analysis.eval_operand(discr, &mut state_mut);
