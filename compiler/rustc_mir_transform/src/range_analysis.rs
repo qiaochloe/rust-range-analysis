@@ -44,7 +44,7 @@ use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::fmt::Formatter;
 
-use rustc_abi::{BackendRepr, FIRST_VARIANT, FieldIdx, Size, VariantIdx};
+use rustc_abi::{BackendRepr, FIRST_VARIANT, FieldIdx, Size, TyAndLayout, VariantIdx};
 use rustc_const_eval::const_eval::{DummyMachine, throw_machine_stop_str};
 use rustc_const_eval::interpret::{
     ImmTy, Immediate, InterpCx, OpTy, PlaceTy, Projectable, interp_ok,
@@ -123,6 +123,55 @@ impl Range {
             None
         }
     }
+
+    fn to_masks(&self) -> Option<(u128, u128)> {
+        if self.signed {
+            return None;
+        }
+        let size = self.lo.size();
+        let diff = self.lo.to_uint(size) ^ self.hi.to_uint(size);
+        let leading = !0 << (128 - diff.leading_zeros());
+        let zero_mask = !self.lo.to_uint(size) & leading;
+        let one_mask = self.lo.to_uint(size) & leading;
+        Some((zero_mask, one_mask))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RangeRelation {
+    LeftLt,
+    LeftLe,
+    Overlap,
+    LeftGe,
+    LeftGt,
+}
+
+impl RangeRelation {
+    fn from_ranges(l: &Range, r: &Range) -> Self {
+        let cmp = if l.signed {
+            l.hi.to_int(l.hi.size()).cmp(&r.lo.to_int(r.lo.size()))
+        } else {
+            l.hi.to_uint(l.hi.size()).cmp(&r.lo.to_uint(r.lo.size()))
+        };
+        if cmp.is_lt() {
+            return RangeRelation::LeftLt;
+        }
+        if cmp.is_eq() {
+            return RangeRelation::LeftLe;
+        }
+        let cmp = if l.signed {
+            l.lo.to_int(l.lo.size()).cmp(&r.hi.to_int(r.hi.size()))
+        } else {
+            l.lo.to_uint(l.lo.size()).cmp(&r.hi.to_uint(r.hi.size()))
+        };
+        if cmp.is_gt() {
+            return RangeRelation::LeftGt;
+        }
+        if cmp.is_eq() {
+            return RangeRelation::LeftGe;
+        }
+        RangeRelation::Overlap
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,6 +219,13 @@ impl HasTop for RangeLattice {
     const TOP: Self = Self::Top;
 }
 
+const RANGE_TRUE: RangeLattice =
+    RangeLattice::Range(Range { lo: ScalarInt::TRUE, hi: ScalarInt::TRUE, signed: false });
+const RANGE_FALSE: RangeLattice =
+    RangeLattice::Range(Range { lo: ScalarInt::FALSE, hi: ScalarInt::FALSE, signed: false });
+const RANGE_BOOL: RangeLattice =
+    RangeLattice::Range(Range { lo: ScalarInt::FALSE, hi: ScalarInt::TRUE, signed: false });
+
 pub(super) struct RangeAnalysisPass;
 
 impl<'tcx> crate::MirPass<'tcx> for RangeAnalysisPass {
@@ -209,7 +265,7 @@ impl<'tcx> crate::MirPass<'tcx> for RangeAnalysisPass {
 
     /// If this is `false`, `#[optimize(none)]` will disable the pass.
     fn is_required(&self) -> bool {
-        false
+        true
     }
 }
 
@@ -703,9 +759,9 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
 
         if ty.is_bool() {
             match constant.const_.try_eval_bool(self.tcx, self.typing_env) {
-                Some(true) => RangeLattice::Range(Range::singleton(ScalarInt::TRUE, false)),
-                Some(false) => RangeLattice::Range(Range::singleton(ScalarInt::FALSE, false)),
-                None => RangeLattice::Range(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, false)),
+                Some(true) => RANGE_TRUE,
+                Some(false) => RANGE_FALSE,
+                None => RANGE_BOOL,
             }
         } else if ty.is_integral() {
             match constant.const_.try_eval_scalar_int(self.tcx, self.typing_env) {
@@ -742,11 +798,7 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
                 let Ok(layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty)) else {
                     return (RangeLattice::Top, RangeLattice::Top);
                 };
-                let size = layout.size;
-                let signed = ty.is_signed();
-
-                let res = self.binary_interval(op, l, r, size, signed);
-                (res, res)
+                self.binary_interval(op, l, r, layout)
             }
             (RangeLattice::Bottom, _)
             | (_, RangeLattice::Bottom)
@@ -758,306 +810,244 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
         }
     }
 
+    /// Returns (value_range, overflow_range)
     fn binary_interval(
         &self,
         op: BinOp,
         l: Range,
         r: Range,
-        size: Size,
-        signed: bool,
-    ) -> RangeLattice {
-        // Get the type and layout for creating ImmTy values
-        let ty = if signed {
-            match size.bytes() {
-                1 => self.tcx.types.i8,
-                2 => self.tcx.types.i16,
-                4 => self.tcx.types.i32,
-                8 => self.tcx.types.i64,
-                16 => self.tcx.types.i128,
-                _ => return RangeLattice::Top,
-            }
-        } else {
-            match size.bytes() {
-                1 => self.tcx.types.u8,
-                2 => self.tcx.types.u16,
-                4 => self.tcx.types.u32,
-                8 => self.tcx.types.u64,
-                16 => self.tcx.types.u128,
-                _ => return RangeLattice::Top,
-            }
-        };
-
-        let Ok(layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty)) else {
-            return RangeLattice::Top;
-        };
+        layout: TyAndLayout<'tcx, Ty<'tcx>>,
+    ) -> (RangeLattice, RangeLattice) {
+        type RL = RangeLattice;
+        let size = layout.size;
+        let signed = l.signed;
 
         let mut ecx = self.ecx.borrow_mut();
+        let cmp = RangeRelation::from_ranges(&l, &r);
+        let type_range = self.get_type_range(layout.ty).map(RL::Range).unwrap_or(RL::Top);
 
-        let eval = |l: ScalarInt, r: ScalarInt, op: BinOp| -> Option<ScalarInt> {
-            let left_scalar = Scalar::from_uint(l.to_bits_unchecked(), size);
-            let right_scalar = Scalar::from_uint(r.to_bits_unchecked(), size);
-
-            let left_imm = ImmTy::from_scalar(left_scalar, layout);
-            let right_imm = ImmTy::from_scalar(right_scalar, layout);
-
-            ecx.binary_op(op, &left_imm, &right_imm)
-                .discard_err()
-                .and_then(|result| result.to_scalar().try_to_scalar_int().ok())
+        // Performs a binary operation using ecx
+        let eval_ecx = |l: ScalarInt, r: ScalarInt, op: BinOp| -> Option<ImmTy<'_>> {
+            let left_imm = ImmTy::from_scalar_int(l, layout);
+            let right_imm = ImmTy::from_scalar_int(r, layout);
+            ecx.binary_op(op, &left_imm, &right_imm).discard_err()
         };
 
-        let type_range =
-            self.get_type_range(ty).map(RangeLattice::Range).unwrap_or(RangeLattice::Top);
-
-        let to_range = |opt: Option<ScalarInt>| -> RangeLattice {
-            opt.map(|val| RangeLattice::Range(Range::singleton(val, signed))).unwrap_or(type_range)
+        // Performs a non-overflowing binary operation
+        let eval_base = |l: ScalarInt, r: ScalarInt, op: BinOp| -> Option<ScalarInt> {
+            assert!(!op.is_overflowing());
+            eval_ecx(l, r, op).and_then(|result| result.to_scalar().try_to_scalar_int().ok())
         };
 
-        let to_range_pair =
-            |min_opt: Option<ScalarInt>, max_opt: Option<ScalarInt>| -> RangeLattice {
-                match (min_opt, max_opt) {
-                    (Some(min_val), Some(max_val)) => {
-                        RangeLattice::Range(Range::new(min_val, max_val, signed))
-                    }
-                    _ => type_range,
-                }
-            };
+        // Performs an overflowing binary operation
+        let eval_over = |l: ScalarInt, r: ScalarInt, op: BinOp| -> (Option<ScalarInt>, bool) {
+            assert!(op.is_overflowing());
+            // FIXME: is unwrap okay?
+            let (res, overflow) = eval_ecx(l, r, op).unwrap().to_scalar_pair();
+            (res.try_to_scalar_int().ok(), overflow.to_bool().discard_err().unwrap())
+        };
+
+        let to_range = |opt: Option<ScalarInt>| -> RL {
+            opt.map(|val| RL::Range(Range::singleton(val, signed))).unwrap_or(type_range)
+        };
+
+        let to_range_pair = |min_opt: Option<ScalarInt>, max_opt: Option<ScalarInt>| -> RL {
+            match (min_opt, max_opt) {
+                (Some(min_val), Some(max_val)) => RL::Range(Range::new(min_val, max_val, signed)),
+                _ => type_range,
+            }
+        };
 
         use BinOp::*;
         match op {
-            Add => {
+            Add | AddWithOverflow if !signed => {
                 // (l.lo + r.lo, l.hi + r.hi)
-                return to_range_pair(eval(l.lo, r.lo, op), eval(l.hi, r.hi, op));
+                let (lo, lo_over) = eval_over(l.lo, r.lo, AddWithOverflow);
+                let (hi, hi_over) = eval_over(l.hi, r.hi, AddWithOverflow);
+                if lo_over {
+                    (to_range_pair(lo, hi), RANGE_TRUE)
+                } else if !hi_over {
+                    (to_range_pair(lo, hi), RANGE_FALSE)
+                } else {
+                    (type_range, RANGE_BOOL)
+                }
             }
 
-            Sub => {
+            Add | AddWithOverflow if signed => {
+                // (l.lo + r.lo, l.hi + r.hi)
+                let (lo, lo_over) = eval_over(l.lo, r.lo, AddWithOverflow);
+                let (hi, hi_over) = eval_over(l.hi, r.hi, AddWithOverflow);
+                if lo_over && hi_over && lo.unwrap().to_int(size) <= hi.unwrap().to_int(size) {
+                    (to_range_pair(lo, hi), RANGE_TRUE)
+                } else if !lo_over && !hi_over {
+                    (to_range_pair(lo, hi), RANGE_FALSE)
+                } else {
+                    (type_range, RANGE_BOOL)
+                }
+            }
+
+            Sub | SubWithOverflow if !signed => {
                 // (l.lo - r.hi, l.hi - r.lo)
-                return to_range_pair(eval(l.lo, r.hi, op), eval(l.hi, r.lo, op));
+                let lo = eval_base(l.lo, r.hi, Sub);
+                let hi = eval_base(l.hi, r.lo, Sub);
+                if matches!(cmp, RangeRelation::LeftGe) {
+                    (to_range_pair(lo, hi), RANGE_FALSE)
+                } else if matches!(cmp, RangeRelation::LeftLt) {
+                    (to_range_pair(lo, hi), RANGE_TRUE)
+                } else {
+                    (type_range, RANGE_BOOL)
+                }
             }
 
-            Mul | Div => {
-                // Try all candidates, filtering out errors (e.g., division by zero)
+            Sub | SubWithOverflow if signed => {
+                // (l.lo - r.hi, l.hi - r.lo)
+                let (lo, lo_over) = eval_over(l.lo, r.hi, SubWithOverflow);
+                let (hi, hi_over) = eval_over(l.hi, r.lo, SubWithOverflow);
+                if lo_over && hi_over && lo.unwrap().to_int(size) <= hi.unwrap().to_int(size) {
+                    (to_range_pair(lo, hi), RANGE_TRUE)
+                } else if !lo_over && !hi_over {
+                    (to_range_pair(lo, hi), RANGE_FALSE)
+                } else {
+                    (type_range, RANGE_BOOL)
+                }
+            }
+
+            Mul | MulWithOverflow => {
                 let candidates = [(l.lo, r.lo), (l.lo, r.hi), (l.hi, r.lo), (l.hi, r.hi)];
-                let results: Vec<ScalarInt> = candidates
+                let mut results = Vec::new();
+                for (l_val, r_val) in candidates {
+                    let (res, over) = eval_over(l_val, r_val, MulWithOverflow);
+                    if over {
+                        return (type_range, RANGE_BOOL);
+                    }
+                    results.push(res.unwrap());
+                }
+                if signed {
+                    results.sort_by(|a, b| a.to_int(size).cmp(&b.to_int(size)));
+                } else {
+                    results.sort_by(|a, b| a.to_uint(size).cmp(&b.to_uint(size)));
+                }
+                (RL::Range(Range::new(results[0], results[3], signed)), RANGE_FALSE)
+            }
+
+            Div => {
+                if !signed && r.lo.to_uint(size) == 0 {
+                    return (RL::Top, RL::Top);
+                }
+                if signed && r.lo.to_int(size) <= 0 && r.hi.to_int(size) >= 0 {
+                    return (RL::Top, RL::Top);
+                }
+                // Check MIN / -1, note that r can no longer contain 0
+                if signed && l.lo.to_int(size) == size.signed_int_min() && r.hi.to_int(size) == -1 {
+                    return (RL::Top, RL::Top);
+                }
+                let candidates = [(l.lo, r.lo), (l.lo, r.hi), (l.hi, r.lo), (l.hi, r.hi)];
+                let mut results: Vec<ScalarInt> = candidates
                     .iter()
-                    .filter_map(|(l_val, r_val)| eval(*l_val, *r_val, op))
+                    .map(|(l_val, r_val)| eval_base(*l_val, *r_val, Div).unwrap())
                     .collect();
-
-                if results.is_empty() {
-                    return RangeLattice::Top;
+                if signed {
+                    results.sort_by(|a, b| a.to_int(size).cmp(&b.to_int(size)));
+                } else {
+                    results.sort_by(|a, b| a.to_uint(size).cmp(&b.to_uint(size)));
                 }
-
-                let min_val = results
-                    .iter()
-                    .min_by(|a, b| {
-                        if signed {
-                            a.to_int(size).cmp(&b.to_int(size))
-                        } else {
-                            a.to_uint(size).cmp(&b.to_uint(size))
-                        }
-                    })
-                    .unwrap();
-
-                let max_val = results
-                    .iter()
-                    .max_by(|a, b| {
-                        if signed {
-                            a.to_int(size).cmp(&b.to_int(size))
-                        } else {
-                            a.to_uint(size).cmp(&b.to_uint(size))
-                        }
-                    })
-                    .unwrap();
-
-                return RangeLattice::Range(Range::new(*min_val, *max_val, signed));
+                (RL::Range(Range::new(results[0], results[3], signed)), RL::Top)
             }
 
-            BitAnd => {
-                if l.lo == l.hi && r.lo == r.hi {
-                    return to_range(eval(l.lo, r.lo, op));
-                }
-
-                if !signed {
-                    // 0 <= (l & r) <= min(l, r)
-                    let zero = ScalarInt::try_from_uint(0u128, size).unwrap();
-                    let cmp = l.hi.to_uint(size).cmp(&r.hi.to_uint(size));
-                    let min = if cmp.is_gt() { r.hi } else { l.hi };
-                    return RangeLattice::Range(Range::new(zero, min, signed));
-                }
-
-                // FIXME: might be able to do optimizations
-                return RangeLattice::Top;
+            BitAnd | BitOr | BitXor if l.lo == l.hi && r.lo == r.hi => {
+                (to_range(eval_base(l.lo, r.lo, op)), RL::Top)
             }
 
-            BitOr => {
-                if l.lo == l.hi && r.lo == r.hi {
-                    return to_range(eval(l.lo, r.lo, op));
-                }
-
-                if !signed {
-                    // min >= max(l.lo, r.lo)
-                    // max <= l.hi | r.hi
-                    let cmp = l.lo.to_uint(size).cmp(&r.lo.to_uint(size));
-                    let min_val = if cmp.is_gt() { l.lo } else { r.lo };
-                    return to_range_pair(Some(min_val), eval(l.hi, r.hi, op));
-                }
-
-                // FIXME: might be able to do optimizations
-                return RangeLattice::Top;
+            BitAnd if !signed => {
+                let (l_zero, l_one) = l.to_masks().unwrap();
+                let (r_zero, r_one) = r.to_masks().unwrap();
+                let one = l_one & r_one;
+                let zero = l_zero | r_zero;
+                let lo = ScalarInt::try_from_uint(one, size).unwrap();
+                let hi = ScalarInt::try_from_uint(one | !zero, size).unwrap();
+                (RL::Range(Range::new(lo, hi, signed)), RL::Top)
+                // FIXME: might be able to do signed optimizations
             }
 
-            BitXor => {
-                if l.lo == l.hi && r.lo == r.hi {
-                    return to_range(eval(l.lo, r.lo, op));
-                }
-
-                if !signed {
-                    let zero = ScalarInt::try_from_uint(0u128, size).unwrap();
-                    let max_val = ScalarInt::try_from_uint(size.unsigned_int_max(), size).unwrap();
-                    return RangeLattice::Range(Range::new(zero, max_val, signed));
-                }
-
-                // FIXME: might be able to optimize
-                return RangeLattice::Top;
+            BitOr if !signed => {
+                let (l_zero, l_one) = l.to_masks().unwrap();
+                let (r_zero, r_one) = r.to_masks().unwrap();
+                let one = l_one | r_one;
+                let zero = l_zero & r_zero;
+                let lo = ScalarInt::try_from_uint(one, size).unwrap();
+                let hi = ScalarInt::try_from_uint(one | !zero, size).unwrap();
+                (RL::Range(Range::new(lo, hi, signed)), RL::Top)
+                // FIXME: might be able to do signed optimizations
             }
 
-            Shr | Shl => {
-                return to_range_pair(eval(l.lo, r.hi, op), eval(l.hi, r.lo, op));
+            BitXor if !signed => {
+                let (l_zero, l_one) = l.to_masks().unwrap();
+                let (r_zero, r_one) = r.to_masks().unwrap();
+                let one = l_one & r_zero | l_zero & r_one;
+                let zero = l_zero & r_zero | l_one & r_one;
+                let lo = ScalarInt::try_from_uint(one, size).unwrap();
+                let hi = ScalarInt::try_from_uint(one | !zero, size).unwrap();
+                (RL::Range(Range::new(lo, hi, signed)), RL::Top)
+                // FIXME: might be able to do signed optimizations
             }
 
             Eq => {
-                let singleton_equal = l.lo == l.hi && r.lo == r.hi && l.lo == r.lo;
-                if singleton_equal {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::TRUE, false));
+                if matches!(cmp, RangeRelation::LeftLt | RangeRelation::LeftGt) {
+                    return (RANGE_FALSE, RL::Top);
                 }
-
-                let cmp1 = if signed {
-                    l.hi.to_int(size).cmp(&r.lo.to_int(size))
-                } else {
-                    l.hi.to_uint(size).cmp(&r.lo.to_uint(size))
-                };
-                let cmp2 = if signed {
-                    r.hi.to_int(size).cmp(&l.lo.to_int(size))
-                } else {
-                    r.hi.to_uint(size).cmp(&l.lo.to_uint(size))
-                };
-                let disjoint = cmp1.is_lt() && cmp2.is_lt();
-                if disjoint {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::FALSE, false));
-                }
-                return RangeLattice::Range(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, signed));
+                (RANGE_BOOL, RL::Top)
             }
 
             Ne => {
-                let singleton_equal = l.lo == l.hi && r.lo == r.hi && l.lo == r.lo;
-                if singleton_equal {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::TRUE, false));
+                if matches!(cmp, RangeRelation::LeftLt | RangeRelation::LeftGt) {
+                    return (RANGE_TRUE, RL::Top);
                 }
-
-                let cmp1 = if signed {
-                    l.hi.to_int(size).cmp(&r.lo.to_int(size))
-                } else {
-                    l.hi.to_uint(size).cmp(&r.lo.to_uint(size))
-                };
-                let cmp2 = if signed {
-                    r.hi.to_int(size).cmp(&l.lo.to_int(size))
-                } else {
-                    r.hi.to_uint(size).cmp(&l.lo.to_uint(size))
-                };
-                let disjoint = cmp1.is_lt() && cmp2.is_lt();
-                if disjoint {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::FALSE, false));
-                }
-                return RangeLattice::Range(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, signed));
+                (RANGE_BOOL, RL::Top)
             }
 
             Lt => {
-                let cmp1 = if signed {
-                    l.hi.to_int(size).cmp(&r.lo.to_int(size))
+                if matches!(cmp, RangeRelation::LeftLt) {
+                    (RANGE_TRUE, RL::Top)
+                } else if matches!(cmp, RangeRelation::LeftGe) {
+                    (RANGE_FALSE, RL::Top)
                 } else {
-                    l.hi.to_uint(size).cmp(&r.lo.to_uint(size))
-                };
-                if cmp1.is_lt() {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::TRUE, false));
+                    (RANGE_BOOL, RL::Top)
                 }
-                let cmp2 = if signed {
-                    l.lo.to_int(size).cmp(&r.hi.to_int(size))
-                } else {
-                    l.lo.to_uint(size).cmp(&r.hi.to_uint(size))
-                };
-                if cmp2.is_ge() {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::FALSE, false));
-                }
-                return RangeLattice::Range(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, signed));
             }
 
             Le => {
-                let cmp1 = if signed {
-                    l.hi.to_int(size).cmp(&r.lo.to_int(size))
+                if matches!(cmp, RangeRelation::LeftLe) {
+                    (RANGE_TRUE, RL::Top)
+                } else if matches!(cmp, RangeRelation::LeftGt) {
+                    (RANGE_FALSE, RL::Top)
                 } else {
-                    l.hi.to_uint(size).cmp(&r.lo.to_uint(size))
-                };
-                if cmp1.is_le() {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::TRUE, false));
+                    (RANGE_BOOL, RL::Top)
                 }
-                let cmp2 = if signed {
-                    l.lo.to_int(size).cmp(&r.hi.to_int(size))
-                } else {
-                    l.lo.to_uint(size).cmp(&r.hi.to_uint(size))
-                };
-                if cmp2.is_gt() {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::FALSE, false));
-                }
-                return RangeLattice::Range(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, signed));
             }
 
             Gt => {
-                let cmp1 = if signed {
-                    r.hi.to_int(size).cmp(&l.lo.to_int(size))
+                if matches!(cmp, RangeRelation::LeftGt) {
+                    (RANGE_TRUE, RL::Top)
+                } else if matches!(cmp, RangeRelation::LeftLe) {
+                    (RANGE_FALSE, RL::Top)
                 } else {
-                    r.hi.to_uint(size).cmp(&l.lo.to_uint(size))
-                };
-                if cmp1.is_lt() {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::TRUE, false));
+                    (RANGE_BOOL, RL::Top)
                 }
-                let cmp2 = if signed {
-                    r.lo.to_int(size).cmp(&l.hi.to_int(size))
-                } else {
-                    r.lo.to_uint(size).cmp(&l.hi.to_uint(size))
-                };
-                if cmp2.is_ge() {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::FALSE, false));
-                }
-                return RangeLattice::Range(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, signed));
             }
 
             Ge => {
-                let cmp1 = if signed {
-                    r.hi.to_int(size).cmp(&l.lo.to_int(size))
+                if matches!(cmp, RangeRelation::LeftGe) {
+                    (RANGE_TRUE, RL::Top)
+                } else if matches!(cmp, RangeRelation::LeftLt) {
+                    (RANGE_FALSE, RL::Top)
                 } else {
-                    r.hi.to_uint(size).cmp(&l.lo.to_uint(size))
-                };
-                if cmp1.is_le() {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::TRUE, false));
+                    (RANGE_BOOL, RL::Top)
                 }
-                let cmp2 = if signed {
-                    r.lo.to_int(size).cmp(&l.hi.to_int(size))
-                } else {
-                    r.lo.to_uint(size).cmp(&l.hi.to_uint(size))
-                };
-                if cmp2.is_gt() {
-                    return RangeLattice::Range(Range::singleton(ScalarInt::FALSE, false));
-                }
-                return RangeLattice::Range(Range::new(ScalarInt::FALSE, ScalarInt::TRUE, signed));
             }
 
-            // FIXME: handle?
-            AddWithOverflow | SubWithOverflow | MulWithOverflow => unreachable!(),
-            _ => {}
-        };
-
-        drop(ecx);
-
-        return RangeLattice::Top;
+            // FIXME: Shl, Shr
+            _ => (type_range, RL::Top),
+        }
     }
 
     /// The caller must have flooded `place`.
