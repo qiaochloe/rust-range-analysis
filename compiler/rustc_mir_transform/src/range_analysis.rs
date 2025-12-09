@@ -1,23 +1,16 @@
 //! Range analysis finds lower and upper bounds to the values that variables can assume.
 
-// NOTE: can implement array bounds checking elimination, overflow check elimination, static branch prediction
-
 // FIXME:
-// handle AddWithOverflow and SubWithOverflow
-// handle indexing operations
 // char to int conversions
 // handle isize and usize
-// handle infinite loops, widening and lowering
-
-// FIXME: can't handle control flow
-// e.g. if x < 10 { assert!(x < 10) };
+// path-sensitivity e.g. if x < 10 { assert!(x < 10) };
 
 /* TESTS
 NOT OPTIMIZING:
-COMPARISON_OPS
-CONTROL_FLOW
-RANGE_INTERSECTION
-SWITCH_INT_OPT
+comparison_ops
+control_flow
+range_intersection
+switch_int_opt
 
 PASSING:
 binary_ops
@@ -30,7 +23,7 @@ FAILING TO COMPILE:
 nested_loops
 widening
 */
-// FIXME: remove
+// FIXME: remove the allow list
 #![allow(
     dead_code,
     unused_imports,
@@ -69,7 +62,7 @@ use crate::patch::MirPatch;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Range {
-    pub lo: ScalarInt, // FIXME: should this be ImmTy?
+    pub lo: ScalarInt,
     pub hi: ScalarInt,
     pub signed: bool,
 }
@@ -134,6 +127,14 @@ impl Range {
         let zero_mask = !self.lo.to_uint(size) & leading;
         let one_mask = self.lo.to_uint(size) & leading;
         Some((zero_mask, one_mask))
+    }
+
+    pub fn is_singleton(&self) -> bool {
+        self.lo == self.hi
+    }
+
+    pub fn is_equal(&self, other: &Range) -> bool {
+        self.is_singleton() && other.is_singleton() && self.lo == other.lo
     }
 }
 
@@ -273,6 +274,7 @@ impl<'tcx> crate::MirPass<'tcx> for RangeAnalysisPass {
 
     /// If this is `false`, `#[optimize(none)]` will disable the pass.
     fn is_required(&self) -> bool {
+        // FIXME
         true
     }
 }
@@ -401,7 +403,8 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
                 self.handle_assign(*place, rvalue, state);
             }
             StatementKind::SetDiscriminant { box place, variant_index } => {
-                self.handle_set_discriminant(*place, *variant_index, state);
+                // FIXME: check, taken from dataflow_const_prop.rs
+                state.flood_discr(place.as_ref(), &self.map);
             }
             StatementKind::Intrinsic(box intrinsic) => {
                 self.handle_intrinsic(intrinsic);
@@ -642,12 +645,12 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             }
 
             Rvalue::Cast(CastKind::FloatToFloat, _operand, _ty) => {
-                // Float ranges are not tracked, so return Top
+                // Float ranges are not tracked
                 RangeLattice::Top
             }
 
             Rvalue::Cast(CastKind::Transmute | CastKind::Subtype, operand, ty) => {
-                // FIXME: handle transmute/subtype
+                // Transmute and subtype casts are not handled
                 RangeLattice::Top
             }
 
@@ -658,15 +661,9 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
                 val
             }
 
-            Rvalue::UnaryOp(_, operand) => {
-                // FIXME:
-                self.eval_operand(operand, state)
-            }
+            Rvalue::UnaryOp(op, operand) => self.unary_op(state, *op, operand),
 
-            Rvalue::NullaryOp(NullOp::RuntimeChecks(_)) => {
-                // FIXME:
-                RangeLattice::Top
-            }
+            Rvalue::NullaryOp(NullOp::RuntimeChecks(_)) => RangeLattice::Top,
 
             Rvalue::Discriminant(place) => {
                 RangeLattice::Top
@@ -785,6 +782,65 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
         }
     }
 
+    fn unary_op(
+        &self,
+        state: &mut State<RangeLattice>,
+        op: UnOp,
+        operand: &Operand<'tcx>,
+    ) -> RangeLattice {
+        let lat = self.eval_operand(operand, state);
+        match lat {
+            RangeLattice::Range(range, _) => {
+                let ty = operand.ty(self.local_decls, self.tcx);
+                if !ty.is_integral() && !ty.is_bool() {
+                    return RangeLattice::Top;
+                }
+                let Ok(layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty)) else {
+                    return RangeLattice::Top;
+                };
+                self.unary_interval(op, range, layout)
+            }
+            RangeLattice::Bottom => RangeLattice::Bottom,
+            RangeLattice::Top => RangeLattice::Top,
+        }
+    }
+
+    fn unary_interval(
+        &self,
+        op: UnOp,
+        range: Range,
+        layout: TyAndLayout<'tcx, Ty<'tcx>>,
+    ) -> RangeLattice {
+        type RL = RangeLattice;
+        let signed = range.signed;
+        let mut ecx = self.ecx.borrow_mut();
+        let type_range = self.get_type_range(layout.ty).map(RL::range).unwrap_or(RL::Top);
+
+        // Performs a unary operation using ecx
+        let eval = |operand: ScalarInt, op: UnOp| -> Option<ScalarInt> {
+            let imm = ImmTy::from_scalar_int(operand, layout);
+            ecx.unary_op(op, &imm)
+                .discard_err()
+                .and_then(|result| result.to_scalar().try_to_scalar_int().ok())
+        };
+
+        let to_range = |opt: Option<ScalarInt>| -> RL {
+            opt.map(|val| RL::range(Range::singleton(val, signed))).unwrap_or(type_range)
+        };
+
+        use UnOp::*;
+        match op {
+            UnOp::Not | UnOp::Neg => {
+                if range.is_singleton() {
+                    to_range(eval(range.lo, op))
+                } else {
+                    type_range
+                }
+            }
+            UnOp::PtrMetadata => unreachable!(),
+        }
+    }
+
     /// Must only be run without overflows
     /// Returns val and overflow
     fn binary_op(
@@ -800,7 +856,7 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             // Both sides are known, do the actual computation.
             (RangeLattice::Range(l, _), RangeLattice::Range(r, _)) => {
                 let ty = left.ty(self.local_decls, self.tcx);
-                if !ty.is_integral() {
+                if !ty.is_integral() && !ty.is_bool() {
                     return (RangeLattice::Top, RangeLattice::Top);
                 }
                 let Ok(layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty)) else {
@@ -1082,37 +1138,12 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
         }
     }
 
-    /// The caller must have flooded `place`.
-    fn assign_constant(
-        &self,
-        state: &mut State<RangeLattice>,
-        place: PlaceIndex,
-        mut operand: OpTy<'tcx>,
-        projection: &[PlaceElem<'tcx>],
-    ) {
-        // FIXME:
-    }
-
     fn eval_operand(&self, op: &Operand<'tcx>, state: &mut State<RangeLattice>) -> RangeLattice {
         let value = match self.handle_operand(op, state) {
             ValueOrPlace::Value(value) => value,
             ValueOrPlace::Place(place) => state.get_idx(place, &self.map),
         };
         value
-    }
-
-    fn handle_set_discriminant(
-        &self,
-        place: Place<'tcx>,
-        variant_index: VariantIdx,
-        state: &mut State<RangeLattice>,
-    ) {
-        // FIXME:
-    }
-
-    fn eval_discriminant(&self, enum_ty: Ty<'tcx>, variant_index: VariantIdx) -> Option<Scalar> {
-        // FIXME:
-        None
     }
 }
 
@@ -1162,7 +1193,6 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             RangeLattice::Range(Range { lo, hi, .. }, _) => {
                 let lo_bits = lo.to_bits_unchecked();
                 let hi_bits = hi.to_bits_unchecked();
-                // FIXME: are assert statements allowed?
                 assert!(lo_bits == 0 || lo_bits == 1);
                 assert!(hi_bits == 0 || hi_bits == 1);
 
@@ -1298,7 +1328,7 @@ impl<'a, 'tcx> ResultsVisitor<'tcx, RangeAnalysis<'a, 'tcx>> for Collector<'a, '
                 let value = self.analysis.eval_operand(discr, &mut state_mut);
 
                 if let RangeLattice::Range(Range { lo, hi, .. }, _) = value {
-                    // Check if the discriminant is a singleton
+                    // Check if the range is a singleton
                     if lo == hi {
                         let bits = lo.to_bits_unchecked();
                         let target = targets.target_for_value(bits);
