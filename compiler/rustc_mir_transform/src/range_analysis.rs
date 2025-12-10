@@ -3,26 +3,23 @@
 // FIXME:
 // char to int conversions
 // handle isize and usize
-// path-sensitivity e.g. if x < 10 { assert!(x < 10) };
 
 /* TESTS
-NOT OPTIMIZING:
-comparison_ops
-control_flow
-range_intersection
-switch_int_opt
-
 PASSING:
 binary_ops
 bool_u8_cast (can be more aggressive wtih match)
 constant_prop
 int_to_int_cast
 simple_division
-
-FAILING TO COMPILE:
+path_sensitivity
+comparison_ops
+control_flow
+range_intersection
+switch_int_opt
 nested_loops
 widening
 */
+
 // FIXME: remove the allow list
 #![allow(
     dead_code,
@@ -235,6 +232,26 @@ const RANGE_FALSE: RangeLattice =
 const RANGE_BOOL: RangeLattice =
     RangeLattice::Range(Range { lo: ScalarInt::FALSE, hi: ScalarInt::TRUE, signed: false }, 0);
 
+struct SwitchIntRefinement<'tcx> {
+    /// The operand being switched on
+    discr: Operand<'tcx>,
+    /// The place index of the discriminant
+    discr_place: PlaceIndex,
+    /// The range of the discriminant before the switch
+    discr_range: RangeLattice,
+    /// The constraint
+    constraint: PathConstraint,
+}
+
+#[derive(Clone, Debug)]
+enum PathConstraint {
+    // A place compared to a constant that evaluates to a bool
+    ConstantBinary { place: PlaceIndex, op: BinOp, constant: ScalarInt },
+    // FIXME: add Unary
+}
+
+type PathConstraints = FxHashMap<PlaceIndex, PathConstraint>;
+
 pub(super) struct RangeAnalysisPass;
 
 impl<'tcx> crate::MirPass<'tcx> for RangeAnalysisPass {
@@ -274,7 +291,7 @@ impl<'tcx> crate::MirPass<'tcx> for RangeAnalysisPass {
 
     /// If this is `false`, `#[optimize(none)]` will disable the pass.
     fn is_required(&self) -> bool {
-        // FIXME
+        // FIXME:
         true
     }
 }
@@ -285,10 +302,14 @@ struct RangeAnalysis<'a, 'tcx> {
     local_decls: &'a LocalDecls<'tcx>,
     ecx: RefCell<InterpCx<'tcx, DummyMachine>>,
     typing_env: ty::TypingEnv<'tcx>,
+    path_constraints: RefCell<PathConstraints>,
+    aliases: RefCell<FxHashMap<PlaceIndex, PlaceIndex>>,
 }
 
 impl<'tcx> Analysis<'tcx> for RangeAnalysis<'_, 'tcx> {
     type Domain = State<RangeLattice>;
+
+    type SwitchIntData = SwitchIntRefinement<'tcx>;
 
     const NAME: &'static str = "RangeAnalysis";
 
@@ -351,17 +372,111 @@ impl<'tcx> Analysis<'tcx> for RangeAnalysis<'_, 'tcx> {
             self.handle_call_return(return_places, state)
         }
     }
+
+    fn get_switch_int_data(
+        &self,
+        _block: BasicBlock,
+        discr: &Operand<'tcx>,
+    ) -> Option<Self::SwitchIntData> {
+        let ty = discr.ty(self.local_decls, self.tcx);
+        if !ty.is_integral() && !ty.is_bool() {
+            return None;
+        }
+
+        // Find the place being discriminated
+        let discr_place = match discr {
+            Operand::Copy(place) | Operand::Move(place) => self.map.find(place.as_ref())?,
+            Operand::Constant(_) => return None,
+        };
+
+        // Check if this place has an associated constraint
+        let constraints = self.path_constraints.borrow();
+        let constraint = constraints.get(&discr_place)?;
+
+        // We'll get the actual range later in apply_switch_int_edge_effect
+        // when we have access to the state
+        Some(SwitchIntRefinement {
+            discr: discr.clone(),
+            discr_place,
+            discr_range: RangeLattice::Bottom,
+            constraint: constraint.clone(),
+        })
+    }
+
+    fn apply_switch_int_edge_effect(
+        &self,
+        data: &mut Self::SwitchIntData,
+        state: &mut Self::Domain,
+        value: SwitchTargetValue,
+        targets: &SwitchTargets,
+    ) {
+        if !state.is_reachable() {
+            return;
+        }
+
+        // Only proceed if the discriminant is boolean
+        let ty = data.discr.ty(self.local_decls, self.tcx);
+        if !ty.is_bool() {
+            return;
+        }
+
+        // Determine if we're taking the "true" or "false" branch
+        let condition_holds = match value {
+            SwitchTargetValue::Normal(0) => false,
+            SwitchTargetValue::Otherwise => true,
+            _ => return,
+        };
+
+        match data.constraint {
+            PathConstraint::ConstantBinary { place, op, constant } => {
+                use BinOp::*;
+
+                // If condition doesn't hold, negate the operator
+                let effective_op = if condition_holds {
+                    op
+                } else {
+                    match op {
+                        Lt => Ge,
+                        Le => Gt,
+                        Gt => Le,
+                        Ge => Lt,
+                        Eq => Ne,
+                        Ne => Eq,
+                        _ => return,
+                    }
+                };
+
+                // Get the current range of the place
+                let current_range = state.get_idx(place, &self.map);
+                let RangeLattice::Range(mut place_range, _) = current_range else {
+                    return;
+                };
+
+                let refined_range = Self::refine_range(place_range, effective_op, constant);
+
+                if let Some(new_range) = refined_range {
+                    state.insert_value_idx(place, RangeLattice::range(new_range), &self.map);
+                    // Propagate refinement to source places
+                    self.propagate_refinement_to_source(place, new_range, state);
+                }
+            }
+        }
+    }
 }
 
 impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
     fn new(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, map: Map<'tcx>) -> Self {
         let typing_env = body.typing_env(tcx);
+        let path_constraints = RefCell::new(FxHashMap::default());
+        let aliases = RefCell::new(FxHashMap::default());
         Self {
             map,
             tcx,
             local_decls: &body.local_decls,
             ecx: RefCell::new(InterpCx::new(tcx, DUMMY_SP, typing_env, DummyMachine)),
             typing_env,
+            path_constraints,
+            aliases,
         }
     }
 
@@ -448,6 +563,14 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
         rvalue: &Rvalue<'tcx>,
         state: &mut State<RangeLattice>,
     ) {
+        // Record the constraint if target is tracked
+        if let Rvalue::BinaryOp(op, box (left, right)) = rvalue {
+            if let Some(place) = self.map.find(target.as_ref()) {
+                self.record_constraint(place, *op, left, right);
+            }
+        }
+
+        // Handle rvalue
         match rvalue {
             Rvalue::Use(operand) => {
                 state.flood(target.as_ref(), &self.map);
@@ -864,13 +987,10 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
                 };
                 self.binary_interval(op, l, r, layout)
             }
-            (RangeLattice::Bottom, _)
-            | (_, RangeLattice::Bottom)
-            | (RangeLattice::Range(_, _), _)
-            | (_, RangeLattice::Range(_, _))
-            | (RangeLattice::Top, RangeLattice::Top) => {
+            (RangeLattice::Bottom, _) | (_, RangeLattice::Bottom) => {
                 (RangeLattice::Bottom, RangeLattice::Bottom)
             }
+            _ => (RangeLattice::Top, RangeLattice::Top),
         }
     }
 
@@ -1056,6 +1176,9 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             }
 
             Eq => {
+                if l.is_singleton() && r.is_singleton() && l.lo == r.lo {
+                    return (RANGE_TRUE, RL::Top);
+                }
                 if matches!(cmp, RangeRelation::LeftLt | RangeRelation::LeftGt) {
                     return (RANGE_FALSE, RL::Top);
                 }
@@ -1072,7 +1195,7 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             Lt => {
                 if matches!(cmp, RangeRelation::LeftLt) {
                     (RANGE_TRUE, RL::Top)
-                } else if matches!(cmp, RangeRelation::LeftGe) {
+                } else if matches!(cmp, RangeRelation::LeftGt | RangeRelation::LeftGe) {
                     (RANGE_FALSE, RL::Top)
                 } else {
                     (RANGE_BOOL, RL::Top)
@@ -1092,7 +1215,7 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             Gt => {
                 if matches!(cmp, RangeRelation::LeftGt) {
                     (RANGE_TRUE, RL::Top)
-                } else if matches!(cmp, RangeRelation::LeftLe) {
+                } else if matches!(cmp, RangeRelation::LeftLt | RangeRelation::LeftLe) {
                     (RANGE_FALSE, RL::Top)
                 } else {
                     (RANGE_BOOL, RL::Top)
@@ -1125,6 +1248,9 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             Operand::Copy(rhs) | Operand::Move(rhs) => {
                 if let Some(rhs_idx) = self.map.find(rhs.as_ref()) {
                     state.insert_place_idx(place, rhs_idx, &self.map);
+                    // Record that `place` is an alias of `rhs_idx`
+                    // We record the alias relationship so we can propagate refinements later
+                    self.aliases.borrow_mut().insert(place, rhs_idx);
                 } else {
                     // Untracked place => Top.
                     state.insert_value_idx(place, RangeLattice::Top, &self.map);
@@ -1171,6 +1297,163 @@ impl<'tcx> DebugWithContext<RangeAnalysis<'_, 'tcx>> for State<RangeLattice> {
     }
 }
 
+/// Helper methods for constraint-handling
+impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
+    fn refine_range(place_range: Range, op: BinOp, constant: ScalarInt) -> Option<Range> {
+        use BinOp::*;
+
+        let size = place_range.lo.size();
+        let signed = place_range.signed;
+
+        // Helpers to compute (constant - 1) and (constant + 1)
+        let minus_one = |c: ScalarInt| -> Option<ScalarInt> {
+            if signed {
+                let v = c.to_int(size);
+                if v == size.signed_int_min() {
+                    // No value < 0
+                    None
+                } else {
+                    ScalarInt::try_from_int(v - 1, size)
+                }
+            } else {
+                let v = c.to_uint(size);
+                if v == 0 {
+                    // No value < 0
+                    None
+                } else {
+                    ScalarInt::try_from_uint(v - 1, size)
+                }
+            }
+        };
+
+        let plus_one = |c: ScalarInt| -> Option<ScalarInt> {
+            if signed {
+                let v = c.to_int(size);
+                if v == size.signed_int_max() {
+                    // No value > MAX
+                    None
+                } else {
+                    ScalarInt::try_from_int(v + 1, size)
+                }
+            } else {
+                let v = c.to_uint(size);
+                if v == size.unsigned_int_max() {
+                    // No value > MAX
+                    None
+                } else {
+                    ScalarInt::try_from_uint(v + 1, size)
+                }
+            }
+        };
+
+        // Build the constraint range implied by `place OP constant`
+        // for place
+        let constraint = match op {
+            Lt => {
+                // place.hi <= constant - 1
+                let hi = minus_one(constant)?;
+                Range::new(place_range.lo, hi, signed)
+            }
+
+            Le => {
+                // place.hi <= constant
+                Range::new(place_range.lo, constant, signed)
+            }
+
+            Gt => {
+                // place.lo >= constant + 1
+                let lo = plus_one(constant)?;
+                Range::new(lo, place_range.hi, signed)
+            }
+
+            Ge => {
+                // place.lo >= constant
+                Range::new(constant, place_range.hi, signed)
+            }
+
+            Eq => {
+                // place == constant
+                Range::singleton(constant, signed)
+            }
+
+            Ne => {
+                // If place.lo or place.hi == constant, can shift interval down
+                if place_range.is_singleton() {
+                    place_range
+                } else if place_range.lo == constant {
+                    Range::new(plus_one(constant)?, place_range.hi, signed)
+                } else if place_range.hi == constant {
+                    Range::new(place_range.lo, minus_one(constant)?, signed)
+                } else {
+                    place_range
+                }
+            }
+
+            _ => {
+                // Shouldn't see arithmetic ops here; just leave the range unchanged.
+                unreachable!();
+            }
+        };
+
+        // Final refinement: intersect with the current range.
+        place_range.intersect(constraint)
+    }
+
+    // When recording the constraint in handle_assign:
+    fn record_constraint(
+        &self,
+        bool_place: PlaceIndex,
+        op: BinOp,
+        left: &Operand<'tcx>,
+        right: &Operand<'tcx>,
+    ) {
+        if let (Operand::Copy(p) | Operand::Move(p), Operand::Constant(c)) = (left, right) {
+            if let Some(place_idx) = self.map.find(p.as_ref()) {
+                if let Some(const_val) = c.const_.try_eval_scalar_int(self.tcx, self.typing_env) {
+                    let ty = c.const_.ty();
+                    self.path_constraints.borrow_mut().insert(
+                        bool_place,
+                        PathConstraint::ConstantBinary {
+                            place: place_idx,
+                            op,
+                            constant: const_val,
+                        },
+                    );
+                }
+            }
+        } else if let (Operand::Constant(c), Operand::Copy(p) | Operand::Move(p)) = (left, right) {
+            if let Some(place_idx) = self.map.find(p.as_ref()) {
+                if let Some(const_val) = c.const_.try_eval_scalar_int(self.tcx, self.typing_env) {
+                    if let Some(flipped_op) = Self::flip_comparison(op) {
+                        let ty = c.const_.ty();
+                        self.path_constraints.borrow_mut().insert(
+                            bool_place,
+                            PathConstraint::ConstantBinary {
+                                place: place_idx,
+                                op: flipped_op,
+                                constant: const_val,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn flip_comparison(op: BinOp) -> Option<BinOp> {
+        use BinOp::*;
+        Some(match op {
+            Lt => Gt,
+            Le => Ge,
+            Gt => Lt,
+            Ge => Le,
+            Eq => Eq,
+            Ne => Ne,
+            _ => return None,
+        })
+    }
+}
+
 /// Helper methods for dead code elimination
 impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
     /// Evaluates a boolean operand.
@@ -1204,6 +1487,47 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
                     }
                 }
                 None
+            }
+        }
+    }
+
+    /// Propagates a range refinement to the source place of an alias, recursively.
+    /// This ensures that when we refine a copy, we also refine the source
+    /// so that later copies of the source get the refined range.
+    fn propagate_refinement_to_source(
+        &self,
+        alias_place: PlaceIndex,
+        refined_range: Range,
+        state: &mut State<RangeLattice>,
+    ) {
+        let aliases = self.aliases.borrow();
+        let mut visited = FxHashMap::default();
+        let mut to_visit = vec![alias_place];
+
+        while let Some(current) = to_visit.pop() {
+            // Avoid cycles
+            if visited.contains_key(&current) {
+                continue;
+            }
+            visited.insert(current, ());
+
+            // Find the source place for this alias
+            if let Some(&source_place) = aliases.get(&current) {
+                // Get the current range of the source place (only if tracked)
+                if let Some(RangeLattice::Range(existing_range, _)) =
+                    state.try_get_idx(source_place, &self.map)
+                {
+                    // Intersect the refined range with the existing range
+                    if let Some(intersected) = existing_range.intersect(refined_range) {
+                        state.insert_value_idx(
+                            source_place,
+                            RangeLattice::range(intersected),
+                            &self.map,
+                        );
+                        // Continue propagating if the source is itself an alias
+                        to_visit.push(source_place);
+                    }
+                }
             }
         }
     }
@@ -1377,3 +1701,4 @@ impl<'a, 'tcx> ResultsVisitor<'tcx, RangeAnalysis<'a, 'tcx>> for Collector<'a, '
         }
     }
 }
+

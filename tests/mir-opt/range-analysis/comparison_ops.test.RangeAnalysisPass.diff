@@ -70,7 +70,9 @@
           _8 = copy _1;
           StorageLive(_9);
           _9 = copy _2;
-          _3 = Lt(move _8, move _9);
+-         _3 = Lt(move _8, move _9);
++         _3 = const true;
++         nop;
           StorageDead(_9);
           StorageDead(_8);
           goto -> bb6;
@@ -117,7 +119,9 @@
           _15 = copy _1;
           StorageLive(_16);
           _16 = copy _2;
-          _10 = Gt(move _15, move _16);
+-         _10 = Gt(move _15, move _16);
++         _10 = const false;
++         nop;
           StorageDead(_16);
           StorageDead(_15);
           goto -> bb12;
@@ -153,7 +157,9 @@
           StorageDead(_19);
           StorageLive(_20);
           _20 = copy _1;
-          _17 = Eq(move _20, const 5_u8);
+-         _17 = Eq(move _20, const 5_u8);
++         _17 = const true;
++         nop;
           StorageDead(_20);
           goto -> bb15;
       }
@@ -189,7 +195,9 @@
           _26 = copy _1;
           StorageLive(_27);
           _27 = copy _2;
-          _21 = Ne(move _26, move _27);
+-         _21 = Ne(move _26, move _27);
++         _21 = const true;
++         nop;
           StorageDead(_27);
           StorageDead(_26);
           goto -> bb21;

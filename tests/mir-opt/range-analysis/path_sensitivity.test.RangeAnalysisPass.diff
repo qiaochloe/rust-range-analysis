@@ -1,0 +1,67 @@
+- // MIR for `test` before RangeAnalysisPass
++ // MIR for `test` after RangeAnalysisPass
+  
+  fn test(_1: u8, _2: u8) -> () {
+      debug x => _1;
+      debug y => _2;
+      let mut _0: ();
+      let mut _3: bool;
+      let mut _4: u8;
+      let _5: ();
+      let mut _6: bool;
+      let mut _7: u8;
+      let mut _8: !;
+  
+      bb0: {
+          StorageLive(_3);
+          StorageLive(_4);
+          _4 = copy _1;
+          _3 = Lt(move _4, const 5_u8);
+          switchInt(move _3) -> [0: bb4, otherwise: bb1];
+      }
+  
+      bb1: {
+          StorageDead(_4);
+          StorageLive(_5);
+          StorageLive(_6);
+          StorageLive(_7);
+          _7 = copy _1;
+-         _6 = Lt(move _7, const 5_u8);
+-         switchInt(move _6) -> [0: bb3, otherwise: bb2];
++         _6 = const true;
++         nop;
++         goto -> bb2;
+      }
+  
+      bb2: {
+          StorageDead(_7);
+          _5 = const ();
+          StorageDead(_6);
+          StorageDead(_5);
+          _0 = const ();
+          goto -> bb5;
+      }
+  
+      bb3: {
+          StorageDead(_7);
+          StorageLive(_8);
+          _8 = core::panicking::panic(const "assertion failed: x < 5") -> unwind unreachable;
+      }
+  
+      bb4: {
+          StorageDead(_4);
+          _0 = const ();
+          goto -> bb5;
+      }
+  
+      bb5: {
+          StorageDead(_3);
+          return;
+      }
+  }
+  
+  ALLOC0 (size: 23, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 20 3c 20 35                            │ : x < 5
+  }
+  

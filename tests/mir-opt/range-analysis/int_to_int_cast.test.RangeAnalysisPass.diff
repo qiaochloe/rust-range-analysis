@@ -90,7 +90,7 @@
   
       bb5: {
           StorageLive(_9);
-          _9 = core::panicking::panic(const "assertion failed: x_u16 >= 0 && x_u16 <= 255") -> unwind continue;
+          _9 = core::panicking::panic(const "assertion failed: x_u16 >= 0 && x_u16 <= 255") -> unwind unreachable;
       }
   
       bb6: {
@@ -129,7 +129,7 @@
   
       bb10: {
           StorageLive(_17);
-          _17 = core::panicking::panic(const "assertion failed: x_u8 >= 0 && x_u8 <= 255") -> unwind continue;
+          _17 = core::panicking::panic(const "assertion failed: x_u8 >= 0 && x_u8 <= 255") -> unwind unreachable;
       }
   }
   

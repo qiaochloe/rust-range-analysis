@@ -48,8 +48,11 @@
           StorageLive(_8);
           StorageLive(_9);
           _9 = copy _1;
-          _8 = Ge(move _9, const 10_u8);
-          switchInt(move _8) -> [0: bb6, otherwise: bb3];
+-         _8 = Ge(move _9, const 10_u8);
+-         switchInt(move _8) -> [0: bb6, otherwise: bb3];
++         _8 = const true;
++         nop;
++         goto -> bb3;
       }
   
       bb3: {
@@ -57,8 +60,11 @@
           StorageLive(_10);
           StorageLive(_11);
           _11 = copy _1;
-          _10 = Le(move _11, const 20_u8);
-          switchInt(move _10) -> [0: bb5, otherwise: bb4];
+-         _10 = Le(move _11, const 20_u8);
+-         switchInt(move _10) -> [0: bb5, otherwise: bb4];
++         _10 = const true;
++         nop;
++         goto -> bb4;
       }
   
       bb4: {
@@ -83,7 +89,7 @@
   
       bb7: {
           StorageLive(_12);
-          _12 = core::panicking::panic(const "assertion failed: x >= 10 && x <= 20") -> unwind continue;
+          _12 = core::panicking::panic(const "assertion failed: x >= 10 && x <= 20") -> unwind unreachable;
       }
   
       bb8: {
@@ -92,8 +98,11 @@
           StorageLive(_14);
           StorageLive(_15);
           _15 = copy _1;
-          _14 = Gt(move _15, const 20_u8);
-          switchInt(move _14) -> [0: bb10, otherwise: bb9];
+-         _14 = Gt(move _15, const 20_u8);
+-         switchInt(move _14) -> [0: bb10, otherwise: bb9];
++         _14 = const true;
++         nop;
++         goto -> bb9;
       }
   
       bb9: {
@@ -108,7 +117,7 @@
       bb10: {
           StorageDead(_15);
           StorageLive(_16);
-          _16 = core::panicking::panic(const "assertion failed: x > 20") -> unwind continue;
+          _16 = core::panicking::panic(const "assertion failed: x > 20") -> unwind unreachable;
       }
   
       bb11: {
@@ -122,8 +131,11 @@
           StorageLive(_18);
           StorageLive(_19);
           _19 = copy _1;
-          _18 = Lt(move _19, const 10_u8);
-          switchInt(move _18) -> [0: bb14, otherwise: bb13];
+-         _18 = Lt(move _19, const 10_u8);
+-         switchInt(move _18) -> [0: bb14, otherwise: bb13];
++         _18 = const true;
++         nop;
++         goto -> bb13;
       }
   
       bb13: {
@@ -138,7 +150,7 @@
       bb14: {
           StorageDead(_19);
           StorageLive(_20);
-          _20 = core::panicking::panic(const "assertion failed: x < 10") -> unwind continue;
+          _20 = core::panicking::panic(const "assertion failed: x < 10") -> unwind unreachable;
       }
   
       bb15: {

@@ -17,7 +17,8 @@
   
       bb1: {
           StorageDead(_3);
-          switchInt(copy _1) -> [0: bb8, 1: bb7, 5: bb6, 10: bb5, 20: bb4, 100: bb3, otherwise: bb2];
+-         switchInt(copy _1) -> [0: bb8, 1: bb7, 5: bb6, 10: bb5, 20: bb4, 100: bb3, otherwise: bb2];
++         switchInt(copy _1) -> [0: bb8, 1: bb7, 5: bb6, 10: bb5, otherwise: bb2];
       }
   
       bb2: {

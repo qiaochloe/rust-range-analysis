@@ -55,20 +55,15 @@
           StorageLive(_6);
           StorageLive(_7);
           _7 = copy _3;
--         _6 = Lt(move _7, const 100_i32);
--         switchInt(move _6) -> [0: bb6, otherwise: bb2];
-+         _6 = const true;
-+         nop;
-+         goto -> bb2;
+          _6 = Lt(move _7, const 100_i32);
+          switchInt(move _6) -> [0: bb6, otherwise: bb2];
       }
   
       bb2: {
           StorageDead(_7);
           StorageLive(_8);
           _8 = copy _3;
--         _2 = Ge(move _8, const 0_i32);
-+         _2 = const true;
-+         nop;
+          _2 = Ge(move _8, const 0_i32);
           StorageDead(_8);
           StorageLive(_9);
           _9 = copy _3;
@@ -143,9 +138,7 @@
           StorageDead(_4);
           StorageLive(_26);
           _26 = copy _3;
--         _2 = Ge(move _26, const 100_i32);
-+         _2 = const false;
-+         nop;
+          _2 = Ge(move _26, const 100_i32);
           StorageDead(_26);
           _0 = copy _2;
           StorageDead(_3);
