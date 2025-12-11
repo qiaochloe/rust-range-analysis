@@ -1045,6 +1045,16 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
         };
 
         match op {
+            _ if l.is_singleton() && r.is_singleton() && op.is_overflowing() => {
+                let (val, over) = eval_over(l.lo, r.lo, op);
+                (to_range_pair(val, val), if over { RANGE_TRUE } else { RANGE_FALSE })
+            }
+
+            _ if l.is_singleton() && r.is_singleton() && !op.is_overflowing() => {
+                let val = eval_base(l.lo, r.lo, op);
+                (to_range_pair(val, val), RL::Top)
+            }
+
             Add | AddWithOverflow if !signed => {
                 // (l.lo + r.lo, l.hi + r.hi)
                 let (lo, lo_over) = eval_over(l.lo, r.lo, AddWithOverflow);
@@ -1203,7 +1213,7 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             }
 
             // FIXME: Shl, Shr
-            Shl | Shr => (type_range, RL::Top),
+            BitAnd | BitOr | BitXor | Shl | Shr => (type_range, RL::Top),
             _ => unreachable!(),
         }
     }
@@ -1216,19 +1226,22 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
         match op {
             Eq => {
                 if l.is_singleton() && r.is_singleton() && l.lo == r.lo {
-                    return (RANGE_TRUE, RL::Top);
+                    (RANGE_TRUE, RL::Top)
+                } else if matches!(cmp, RangeRelation::LeftLt | RangeRelation::LeftGt) {
+                    (RANGE_FALSE, RL::Top)
+                } else {
+                    (RANGE_BOOL, RL::Top)
                 }
-                if matches!(cmp, RangeRelation::LeftLt | RangeRelation::LeftGt) {
-                    return (RANGE_FALSE, RL::Top);
-                }
-                (RANGE_BOOL, RL::Top)
             }
 
             Ne => {
-                if matches!(cmp, RangeRelation::LeftLt | RangeRelation::LeftGt) {
-                    return (RANGE_TRUE, RL::Top);
+                if l.is_singleton() && r.is_singleton() && l.lo == r.lo {
+                    (RANGE_FALSE, RL::Top)
+                } else if matches!(cmp, RangeRelation::LeftLt | RangeRelation::LeftGt) {
+                    (RANGE_TRUE, RL::Top)
+                } else {
+                    (RANGE_BOOL, RL::Top)
                 }
-                (RANGE_BOOL, RL::Top)
             }
 
             Lt => {
