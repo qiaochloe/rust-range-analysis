@@ -1067,10 +1067,6 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             (res.try_to_scalar_int().ok(), overflow.to_bool().discard_err().unwrap())
         };
 
-        let to_range = |opt: Option<ScalarInt>| -> RL {
-            opt.map(|val| RL::range(Range::singleton(val, signed))).unwrap_or(type_range)
-        };
-
         let to_range_pair = |min_opt: Option<ScalarInt>, max_opt: Option<ScalarInt>| -> RL {
             match (min_opt, max_opt) {
                 (Some(min_val), Some(max_val)) => RL::range(Range::new(min_val, max_val, signed)),
@@ -1195,11 +1191,11 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
                 let min = ScalarInt::try_from_int(-bound, size).unwrap();
                 let max = ScalarInt::try_from_int(bound, size).unwrap();
                 if l.hi.to_int(size) < 0 {
-                    (RL::range(Range::new(min, zero, out_signed)), RL::Top)
+                    (RL::range(Range::new(min, zero, signed)), RL::Top)
                 } else if l.lo.to_int(size) >= 0 {
-                    (RL::range(Range::new(zero, max, out_signed)), RL::Top)
+                    (RL::range(Range::new(zero, max, signed)), RL::Top)
                 } else {
-                    (RL::range(Range::new(min, max, out_signed)), RL::Top)
+                    (RL::range(Range::new(min, max, signed)), RL::Top)
                 }
             }
 
