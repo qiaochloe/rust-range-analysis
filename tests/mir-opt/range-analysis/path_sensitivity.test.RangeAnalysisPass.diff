@@ -33,15 +33,27 @@
       let mut _28: u8;
       let mut _29: bool;
       let mut _30: !;
-      let mut _31: bool;
-      let mut _32: u8;
-      let mut _33: !;
-      let mut _34: bool;
-      let mut _35: u8;
-      let mut _36: !;
-      let mut _37: bool;
-      let mut _38: u8;
-      let mut _39: !;
+      let _31: ();
+      let mut _32: bool;
+      let mut _33: u8;
+      let mut _34: !;
+      let mut _35: bool;
+      let mut _36: u8;
+      let mut _37: !;
+      let mut _38: bool;
+      let mut _39: u8;
+      let mut _40: !;
+      let mut _41: u8;
+      let mut _42: u8;
+      let mut _43: bool;
+      let mut _44: u8;
+      let mut _45: !;
+      let mut _46: bool;
+      let mut _47: u8;
+      let mut _48: !;
+      let mut _49: bool;
+      let mut _50: u8;
+      let mut _51: !;
       scope 1 {
           debug w => _18;
       }
@@ -207,123 +219,213 @@
       bb17: {
           StorageDead(_20);
           StorageDead(_19);
+          StorageLive(_31);
           switchInt(copy _1) -> [1: bb21, 2: bb20, 10: bb19, otherwise: bb18];
       }
   
       bb18: {
-          _0 = ();
+          _31 = ();
           goto -> bb28;
       }
   
       bb19: {
-          StorageLive(_37);
           StorageLive(_38);
-          _38 = copy _1;
--         _37 = Eq(move _38, const 10_u8);
--         switchInt(move _37) -> [0: bb27, otherwise: bb26];
-+         _37 = const true;
+          StorageLive(_39);
+          _39 = copy _1;
+-         _38 = Eq(move _39, const 10_u8);
+-         switchInt(move _38) -> [0: bb27, otherwise: bb26];
++         _38 = const true;
 +         nop;
 +         goto -> bb26;
       }
   
       bb20: {
-          StorageLive(_34);
           StorageLive(_35);
-          _35 = copy _1;
--         _34 = Eq(move _35, const 2_u8);
--         switchInt(move _34) -> [0: bb25, otherwise: bb24];
-+         _34 = const true;
+          StorageLive(_36);
+          _36 = copy _1;
+-         _35 = Eq(move _36, const 2_u8);
+-         switchInt(move _35) -> [0: bb25, otherwise: bb24];
++         _35 = const true;
 +         nop;
 +         goto -> bb24;
       }
   
       bb21: {
-          StorageLive(_31);
           StorageLive(_32);
-          _32 = copy _1;
--         _31 = Eq(move _32, const 1_u8);
--         switchInt(move _31) -> [0: bb23, otherwise: bb22];
-+         _31 = const true;
+          StorageLive(_33);
+          _33 = copy _1;
+-         _32 = Eq(move _33, const 1_u8);
+-         switchInt(move _32) -> [0: bb23, otherwise: bb22];
++         _32 = const true;
 +         nop;
 +         goto -> bb22;
       }
   
       bb22: {
+          StorageDead(_33);
+          _31 = const ();
           StorageDead(_32);
-          _0 = const ();
-          StorageDead(_31);
           goto -> bb28;
       }
   
       bb23: {
-          StorageDead(_32);
-          StorageLive(_33);
-          _33 = core::panicking::panic(const "assertion failed: x == 1") -> unwind unreachable;
+          StorageDead(_33);
+          StorageLive(_34);
+          _34 = core::panicking::panic(const "assertion failed: x == 1") -> unwind unreachable;
       }
   
       bb24: {
+          StorageDead(_36);
+          _31 = const ();
           StorageDead(_35);
-          _0 = const ();
-          StorageDead(_34);
           goto -> bb28;
       }
   
       bb25: {
-          StorageDead(_35);
-          StorageLive(_36);
-          _36 = core::panicking::panic(const "assertion failed: x == 2") -> unwind unreachable;
+          StorageDead(_36);
+          StorageLive(_37);
+          _37 = core::panicking::panic(const "assertion failed: x == 2") -> unwind unreachable;
       }
   
       bb26: {
+          StorageDead(_39);
+          _31 = const ();
           StorageDead(_38);
-          _0 = const ();
-          StorageDead(_37);
           goto -> bb28;
       }
   
       bb27: {
-          StorageDead(_38);
-          StorageLive(_39);
-          _39 = core::panicking::panic(const "assertion failed: x == 10") -> unwind unreachable;
+          StorageDead(_39);
+          StorageLive(_40);
+          _40 = core::panicking::panic(const "assertion failed: x == 10") -> unwind unreachable;
       }
   
       bb28: {
+          StorageDead(_31);
+          StorageLive(_41);
+          StorageLive(_42);
+          _42 = copy _1;
+          _41 = Add(move _42, const 1_u8);
+          StorageDead(_42);
+          switchInt(copy _41) -> [1: bb32, 2: bb31, 10: bb30, otherwise: bb29];
+      }
+  
+      bb29: {
+          _0 = ();
+          goto -> bb39;
+      }
+  
+      bb30: {
+          StorageLive(_49);
+          StorageLive(_50);
+          _50 = copy _1;
+          _49 = Eq(move _50, const 9_u8);
+          switchInt(move _49) -> [0: bb38, otherwise: bb37];
+      }
+  
+      bb31: {
+          StorageLive(_46);
+          StorageLive(_47);
+          _47 = copy _1;
+          _46 = Eq(move _47, const 1_u8);
+          switchInt(move _46) -> [0: bb36, otherwise: bb35];
+      }
+  
+      bb32: {
+          StorageLive(_43);
+          StorageLive(_44);
+          _44 = copy _1;
+          _43 = Eq(move _44, const 0_u8);
+          switchInt(move _43) -> [0: bb34, otherwise: bb33];
+      }
+  
+      bb33: {
+          StorageDead(_44);
+          _0 = const ();
+          StorageDead(_43);
+          goto -> bb39;
+      }
+  
+      bb34: {
+          StorageDead(_44);
+          StorageLive(_45);
+          _45 = core::panicking::panic(const "assertion failed: x == 0") -> unwind unreachable;
+      }
+  
+      bb35: {
+          StorageDead(_47);
+          _0 = const ();
+          StorageDead(_46);
+          goto -> bb39;
+      }
+  
+      bb36: {
+          StorageDead(_47);
+          StorageLive(_48);
+          _48 = core::panicking::panic(const "assertion failed: x == 1") -> unwind unreachable;
+      }
+  
+      bb37: {
+          StorageDead(_50);
+          _0 = const ();
+          StorageDead(_49);
+          goto -> bb39;
+      }
+  
+      bb38: {
+          StorageDead(_50);
+          StorageLive(_51);
+          _51 = core::panicking::panic(const "assertion failed: x == 9") -> unwind unreachable;
+      }
+  
+      bb39: {
           StorageDead(_18);
+          StorageDead(_41);
           return;
       }
   }
   
-  ALLOC0 (size: 25, align: 1) {
+  ALLOC0 (size: 24, align: 1) {
       0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
-      0x10 │ 3a 20 78 20 3d 3d 20 31 30                      │ : x == 10
+      0x10 │ 3a 20 78 20 3d 3d 20 39                         │ : x == 9
   }
   
   ALLOC1 (size: 24, align: 1) {
       0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 20 3d 3d 20 30                         │ : x == 0
+  }
+  
+  ALLOC2 (size: 25, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
+      0x10 │ 3a 20 78 20 3d 3d 20 31 30                      │ : x == 10
+  }
+  
+  ALLOC3 (size: 24, align: 1) {
+      0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
       0x10 │ 3a 20 78 20 3d 3d 20 32                         │ : x == 2
   }
   
-  ALLOC2 (size: 24, align: 1) {
+  ALLOC4 (size: 24, align: 1) {
       0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
       0x10 │ 3a 20 78 20 3d 3d 20 31                         │ : x == 1
   }
   
-  ALLOC3 (size: 30, align: 1) {
+  ALLOC5 (size: 30, align: 1) {
       0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
       0x10 │ 3a 20 77 20 61 73 20 75 38 20 3d 3d 20 30       │ : w as u8 == 0
   }
   
-  ALLOC4 (size: 30, align: 1) {
+  ALLOC6 (size: 30, align: 1) {
       0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
       0x10 │ 3a 20 7a 20 61 73 20 75 38 20 3d 3d 20 30       │ : z as u8 == 0
   }
   
-  ALLOC5 (size: 30, align: 1) {
+  ALLOC7 (size: 30, align: 1) {
       0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
       0x10 │ 3a 20 79 20 61 73 20 75 38 20 3d 3d 20 30       │ : y as u8 == 0
   }
   
-  ALLOC6 (size: 23, align: 1) {
+  ALLOC8 (size: 23, align: 1) {
       0x00 │ 61 73 73 65 72 74 69 6f 6e 20 66 61 69 6c 65 64 │ assertion failed
       0x10 │ 3a 20 78 20 3c 20 35                            │ : x < 5
   }

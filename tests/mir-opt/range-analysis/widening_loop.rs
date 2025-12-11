@@ -9,11 +9,11 @@ fn test() -> u8 {
     // widening should jump to the next threshold in the jump-set.
     // For u8, jump-set is [0, 1, 255], so after growth it should widen to [0, 255].
     loop {
-       if i >= 1 {
-           break;
-       }
-       i += 1;
-       // At this point, i should be widened to [0, 255] due to jump-set widening
+        if i >= 1 {
+            break;
+        }
+        i += 1;
+        // At this point, i should be widened to [0, 255] due to jump-set widening
     }
     i
 }

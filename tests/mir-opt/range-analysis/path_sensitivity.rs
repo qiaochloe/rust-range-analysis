@@ -23,4 +23,11 @@ fn test(x: u8, y: bool, z: bool) {
         10 => assert!(x == 10),
         _ => (),
     }
+
+    match x + 1 {
+        1 => assert!(x == 0),
+        2 => assert!(x == 1),
+        10 => assert!(x == 9),
+        _ => (),
+    }
 }

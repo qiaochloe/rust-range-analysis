@@ -700,18 +700,23 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
 
             Rvalue::UnaryOp(op, operand) => self.unary_op(state, *op, operand),
 
-            Rvalue::Use(operand) =>  { return self.handle_operand(operand, state) },
+            Rvalue::Use(operand) => return self.handle_operand(operand, state),
 
             Rvalue::CopyForDeref(_) => bug!("`CopyForDeref` in runtime MIR"),
 
             Rvalue::ShallowInitBox(..) => bug!("`ShallowInitBox` in runtime MIR"),
 
-            _ => RangeLattice::Top
+            _ => RangeLattice::Top,
         };
         ValueOrPlace::Value(val)
     }
 
-    fn int_to_int(&self, state: &mut State<RangeLattice>, operand: &Operand<'tcx>, ty: Ty<'tcx>) -> RangeLattice {
+    fn int_to_int(
+        &self,
+        state: &mut State<RangeLattice>,
+        operand: &Operand<'tcx>,
+        ty: Ty<'tcx>,
+    ) -> RangeLattice {
         // Only handle integral or bool types
         // FIXME: handle char?
         let operand_ty = operand.ty(self.local_decls, self.tcx);
@@ -723,13 +728,11 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
         }
 
         // Get layouts
-        let Ok(operand_layout) =
-            self.tcx.layout_of(self.typing_env.as_query_input(operand_ty))
+        let Ok(operand_layout) = self.tcx.layout_of(self.typing_env.as_query_input(operand_ty))
         else {
             return RangeLattice::Top;
         };
-        let Ok(target_layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty))
-        else {
+        let Ok(target_layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty)) else {
             return RangeLattice::Top;
         };
 
@@ -743,16 +746,11 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
                 let target_signed = ty.is_signed();
                 let convert_bound = |bound: ScalarInt| -> ScalarInt {
                     let imm_ty = ImmTy::from_scalar_int(bound, operand_layout);
-                    let result_imm_ty = self
-                        .ecx
-                        .borrow_mut()
-                        .int_to_int_or_float(&imm_ty, target_layout)
-                        .unwrap();
+                    let result_imm_ty =
+                        self.ecx.borrow_mut().int_to_int_or_float(&imm_ty, target_layout).unwrap();
                     match *result_imm_ty {
                         Immediate::Scalar(Scalar::Int(v)) => v,
-                        _ => bug!(
-                            "int_to_int_or_float returned non-integer for IntToInt cast"
-                        ),
+                        _ => bug!("int_to_int_or_float returned non-integer for IntToInt cast"),
                     }
                 };
 
@@ -799,9 +797,7 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             RangeLattice::Bottom => RangeLattice::Bottom,
             RangeLattice::Top => {
                 // If operand is Top, check if we can at least provide the target type's range
-                self.get_type_range(ty)
-                    .map(RangeLattice::range)
-                    .unwrap_or(RangeLattice::Top)
+                self.get_type_range(ty).map(RangeLattice::range).unwrap_or(RangeLattice::Top)
             }
         }
     }
