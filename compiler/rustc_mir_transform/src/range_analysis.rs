@@ -236,17 +236,17 @@ impl<'tcx> crate::MirPass<'tcx> for RangeAnalysisPass {
     }
 
     fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
-        dbg!(&body.span);
+        //dbg!(&body.span);
         let place_limit = None;
         let map = Map::new(tcx, body, place_limit);
 
         let results = debug_span!("analyze")
             .in_scope(|| RangeAnalysis::new(tcx, body, map).iterate_to_fixpoint(tcx, body, None));
 
-        dbg!(&results.analysis.map);
-        dbg!(&results.entry_states);
+        //dbg!(&results.analysis.map);
+        //dbg!(&results.entry_states);
 
-        // Perform dead code elimination based on range analysis
+        // Perform redundant code elimination
         let patch = {
             let mut visitor = Patcher::new(tcx, body, &results);
             debug_span!("collect").in_scope(|| {
@@ -395,9 +395,8 @@ impl<'tcx> Analysis<'tcx> for RangeAnalysis<'_, 'tcx> {
 
             match data.constraint {
                 PathConstraint::ConstantBinary { place, op, constant } => {
-                    use BinOp::*;
-
                     // If condition doesn't hold, negate the operator
+                    use BinOp::*;
                     let effective_op = if cond {
                         op
                     } else {
@@ -602,6 +601,9 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
             Rvalue::CopyForDeref(_) => bug!("`CopyForDeref` in runtime MIR"),
 
             Rvalue::Aggregate(kind, operands) => {
+                // FIXME: check whether to handle
+                // are we field-sensitive?
+
                 // Flood the target place
                 state.flood(target.as_ref(), &self.map);
 
@@ -682,119 +684,11 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
         state: &mut State<RangeLattice>,
     ) -> ValueOrPlace<RangeLattice> {
         let val = match rvalue {
-            Rvalue::Cast(CastKind::IntToInt, operand, ty) => {
-                // Only handle integral or bool types
-                // FIXME: handle char?
-                let operand_ty = operand.ty(self.local_decls, self.tcx);
-                if !operand_ty.is_integral() && !operand_ty.is_bool() {
-                    return ValueOrPlace::Value(RangeLattice::Top);
-                }
-                if !ty.is_integral() && !ty.is_bool() {
-                    return ValueOrPlace::Value(RangeLattice::Top);
-                }
-
-                // Get layouts
-                let Ok(operand_layout) =
-                    self.tcx.layout_of(self.typing_env.as_query_input(operand_ty))
-                else {
-                    return ValueOrPlace::Value(RangeLattice::Top);
-                };
-                let Ok(target_layout) = self.tcx.layout_of(self.typing_env.as_query_input(*ty))
-                else {
-                    return ValueOrPlace::Value(RangeLattice::Top);
-                };
-
-                // Get the target type's full range
-                let Some(type_range) = self.get_type_range(*ty) else {
-                    return ValueOrPlace::Value(RangeLattice::Top);
-                };
-
-                match self.eval_operand(operand, state) {
-                    RangeLattice::Range(range, _) => {
-                        let target_signed = ty.is_signed();
-                        let convert_bound = |bound: ScalarInt| -> ScalarInt {
-                            let imm_ty = ImmTy::from_scalar_int(bound, operand_layout);
-                            let result_imm_ty = self
-                                .ecx
-                                .borrow_mut()
-                                .int_to_int_or_float(&imm_ty, target_layout)
-                                .unwrap();
-                            match *result_imm_ty {
-                                Immediate::Scalar(Scalar::Int(v)) => v,
-                                _ => bug!(
-                                    "int_to_int_or_float returned non-integer for IntToInt cast"
-                                ),
-                            }
-                        };
-
-                        let lo = convert_bound(range.lo);
-                        let hi = convert_bound(range.hi);
-
-                        // Check if the source range is large enough to wrap around
-                        // Calculate the width of the source range
-                        let source_width = if range.signed {
-                            let lo_val = range.lo.to_int(operand_layout.size);
-                            let hi_val = range.hi.to_int(operand_layout.size);
-                            (hi_val - lo_val) as u128 + 1
-                        } else {
-                            let lo_val = range.lo.to_uint(operand_layout.size);
-                            let hi_val = range.hi.to_uint(operand_layout.size);
-                            hi_val - lo_val + 1
-                        };
-
-                        // Number of distinct values in the target type
-                        let target_num_values = target_layout.size.unsigned_int_max() + 1;
-
-                        // Check if range wraps: if hi < lo after conversion, or if
-                        // the source range is large enough to cover all target values
-                        let wraps = if target_signed {
-                            let lo_val = lo.to_int(target_layout.size);
-                            let hi_val = hi.to_int(target_layout.size);
-                            hi_val < lo_val || source_width > target_num_values
-                        } else {
-                            let lo_val = lo.to_uint(target_layout.size);
-                            let hi_val = hi.to_uint(target_layout.size);
-                            hi_val < lo_val || source_width > target_num_values
-                        };
-
-                        if wraps {
-                            RangeLattice::range(type_range)
-                        } else {
-                            let converted_range = Range::new(lo, hi, target_signed);
-                            converted_range
-                                .intersect(type_range)
-                                .map(RangeLattice::range)
-                                .unwrap_or(RangeLattice::Top)
-                        }
-                    }
-                    RangeLattice::Bottom => RangeLattice::Bottom,
-                    RangeLattice::Top => {
-                        // If operand is Top, check if we can at least provide the target type's range
-                        self.get_type_range(*ty)
-                            .map(RangeLattice::range)
-                            .unwrap_or(RangeLattice::Top)
-                    }
-                }
-            }
-
-            Rvalue::Cast(CastKind::IntToFloat, _operand, _ty) => {
-                // Float ranges are not tracked, so return Top
-                RangeLattice::Top
-            }
+            Rvalue::Cast(CastKind::IntToInt, operand, ty) => self.int_to_int(state, operand, *ty),
 
             Rvalue::Cast(CastKind::FloatToInt, _operand, ty) => {
                 // Return the target type's range
                 self.get_type_range(*ty).map(RangeLattice::range).unwrap_or(RangeLattice::Top)
-            }
-
-            Rvalue::Cast(CastKind::FloatToFloat, _operand, _ty) => {
-                // Float ranges are not tracked
-                RangeLattice::Top
-            }
-
-            Rvalue::Cast(CastKind::Transmute | CastKind::Subtype, _, _) => {
-                // Transmute and subtype casts are not handled
-                RangeLattice::Top
             }
 
             Rvalue::BinaryOp(op, box (left, right)) if !op.is_overflowing() => {
@@ -806,36 +700,110 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
 
             Rvalue::UnaryOp(op, operand) => self.unary_op(state, *op, operand),
 
-            Rvalue::NullaryOp(NullOp::RuntimeChecks(_)) => RangeLattice::Top,
-
-            Rvalue::Discriminant(_) => {
-                RangeLattice::Top
-                // state.get_discr(place.as_ref(), &self.map)
-            }
-
-            Rvalue::Use(operand) => {
-                return self.handle_operand(operand, state);
-            }
+            Rvalue::Use(operand) =>  { return self.handle_operand(operand, state) },
 
             Rvalue::CopyForDeref(_) => bug!("`CopyForDeref` in runtime MIR"),
 
             Rvalue::ShallowInitBox(..) => bug!("`ShallowInitBox` in runtime MIR"),
 
-            Rvalue::Ref(..) | Rvalue::RawPtr(..) => {
-                // We do not track pointer ranges in this analysis.
-                RangeLattice::Top
-            }
-            Rvalue::Repeat(..)
-            | Rvalue::ThreadLocalRef(..)
-            | Rvalue::Cast(..)
-            | Rvalue::BinaryOp(..)
-            | Rvalue::Aggregate(..)
-            | Rvalue::WrapUnsafeBinder(..) => {
-                // No modification is possible through these r-values.
-                RangeLattice::Top
-            }
+            _ => RangeLattice::Top
         };
         ValueOrPlace::Value(val)
+    }
+
+    fn int_to_int(&self, state: &mut State<RangeLattice>, operand: &Operand<'tcx>, ty: Ty<'tcx>) -> RangeLattice {
+        // Only handle integral or bool types
+        // FIXME: handle char?
+        let operand_ty = operand.ty(self.local_decls, self.tcx);
+        if !operand_ty.is_integral() && !operand_ty.is_bool() {
+            return RangeLattice::Top;
+        }
+        if !ty.is_integral() && !ty.is_bool() {
+            return RangeLattice::Top;
+        }
+
+        // Get layouts
+        let Ok(operand_layout) =
+            self.tcx.layout_of(self.typing_env.as_query_input(operand_ty))
+        else {
+            return RangeLattice::Top;
+        };
+        let Ok(target_layout) = self.tcx.layout_of(self.typing_env.as_query_input(ty))
+        else {
+            return RangeLattice::Top;
+        };
+
+        // Get the target type's full range
+        let Some(type_range) = self.get_type_range(ty) else {
+            return RangeLattice::Top;
+        };
+
+        match self.eval_operand(operand, state) {
+            RangeLattice::Range(range, _) => {
+                let target_signed = ty.is_signed();
+                let convert_bound = |bound: ScalarInt| -> ScalarInt {
+                    let imm_ty = ImmTy::from_scalar_int(bound, operand_layout);
+                    let result_imm_ty = self
+                        .ecx
+                        .borrow_mut()
+                        .int_to_int_or_float(&imm_ty, target_layout)
+                        .unwrap();
+                    match *result_imm_ty {
+                        Immediate::Scalar(Scalar::Int(v)) => v,
+                        _ => bug!(
+                            "int_to_int_or_float returned non-integer for IntToInt cast"
+                        ),
+                    }
+                };
+
+                let lo = convert_bound(range.lo);
+                let hi = convert_bound(range.hi);
+
+                // Check if the source range is large enough to wrap around
+                // Calculate the width of the source range
+                let source_width = if range.signed {
+                    let lo_val = range.lo.to_int(operand_layout.size);
+                    let hi_val = range.hi.to_int(operand_layout.size);
+                    (hi_val - lo_val) as u128 + 1
+                } else {
+                    let lo_val = range.lo.to_uint(operand_layout.size);
+                    let hi_val = range.hi.to_uint(operand_layout.size);
+                    hi_val - lo_val + 1
+                };
+
+                // Number of distinct values in the target type
+                let target_num_values = target_layout.size.unsigned_int_max() + 1;
+
+                // Check if range wraps: if hi < lo after conversion, or if
+                // the source range is large enough to cover all target values
+                let wraps = if target_signed {
+                    let lo_val = lo.to_int(target_layout.size);
+                    let hi_val = hi.to_int(target_layout.size);
+                    hi_val < lo_val || source_width > target_num_values
+                } else {
+                    let lo_val = lo.to_uint(target_layout.size);
+                    let hi_val = hi.to_uint(target_layout.size);
+                    hi_val < lo_val || source_width > target_num_values
+                };
+
+                if wraps {
+                    RangeLattice::range(type_range)
+                } else {
+                    let converted_range = Range::new(lo, hi, target_signed);
+                    converted_range
+                        .intersect(type_range)
+                        .map(RangeLattice::range)
+                        .unwrap_or(RangeLattice::Top)
+                }
+            }
+            RangeLattice::Bottom => RangeLattice::Bottom,
+            RangeLattice::Top => {
+                // If operand is Top, check if we can at least provide the target type's range
+                self.get_type_range(ty)
+                    .map(RangeLattice::range)
+                    .unwrap_or(RangeLattice::Top)
+            }
+        }
     }
 
     fn handle_operand(
