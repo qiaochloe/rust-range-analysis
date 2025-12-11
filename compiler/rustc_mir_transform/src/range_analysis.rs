@@ -867,7 +867,9 @@ impl<'a, 'tcx> RangeAnalysis<'a, 'tcx> {
                     RangeLattice::range(Range::singleton(scalar_int, ty.is_signed()))
                 }
                 None => {
-                    self.get_type_range(ty).map(RangeLattice::range).unwrap_or(RangeLattice::Top)
+                    // If const evaluation fails (e.g., for const generic parameters),
+                    // we don't know the value, so return Top
+                    RangeLattice::Top
                 }
             }
         } else {
